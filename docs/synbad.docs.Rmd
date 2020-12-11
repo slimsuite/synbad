@@ -1,0 +1,111 @@
+---
+title: "SYNBAD V0.1.4 Documentation"
+author: "Richard J. Edwards"
+date: "2020-12-11"
+output:
+  html_document:
+    css: http://www.slimsuite.unsw.edu.au/stylesheets/slimhtml.css
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+    toc_depth: 3
+    number_sections: true
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+<a name="Top" />
+
+
+# SynBad:  Synteny-based scaffolding adjustment
+
+SynBad is a tool for comparing two related genome assemblies and identify putative translocations and inversions
+between the two that correspond to gap positions. These positions could indicate misplaced scaffolding.
+
+SynBad will use or create:
+
+1. A table of gap positions for each assembly (seqname, start, end). This can optionally have long reads mapped and
+spanning coverage calculated for each gap using Diploidocus. Gaps without spanning long reads are more likely to
+correspond to misassemblies.
+
+2. The qryunique and hitunique local hits tables from a GABLAM run using Minimap2.
+
+Pairwise hits between the genomes are filtered according to the `minlocid=PERC` and `minloclen=INT` criteria, which
+by default limits hits to be at least 1kb and 50% identity. Note that this is applied after GABLAM has run, so it
+should be possible to re-run with more relaxed constraints and re-use the GABLAM tables.
+
+Next, all gap positions are read in along with the local hits tables. For each genome, the local hit tables are
+sorted and `QryGap` and `SbjGap` fields added. Any local alignments with flanking hits are then flagged in these
+new fields with the number of flanking 5', 3' gaps.
+
+The gap tables will also be updated with `GapSpan` and `SynSpan` fields that have the distance between the
+corresponding local hits on the Qry and Sbj genomes. If there is also an inversion, `SynSpan` will be negative.
+If the local hits are against two different sequences from the other genome, the two sequence names will be
+entered in the `SynSpan` field instead. If the gap is in the middle of local hit (likely to be true only for
+small gaps), `SynSpan` or `GapSpan` will have a value of zero.
+
+Gaps will then be classified according to the associated `GapSpan` and `SynSpan` values:
+
+* `Aligned` = Gap is found in the middle of a local alignment to the Hit
+* `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
+* `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
+* `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
+* `Inversion` = Negative `SynSpan` value.
+* `Translocation` = `SynSpan` indicates matches are on different contigs.
+* `Terminal` = Gap is between a local alignment and the end of the query sequence.
+* `Null` = No mapping between genomes for that gap.
+
+If `fragment=T`, the assemblies will then be fragmented on gaps that are not Syntenic, unless more than
+`minreadspan=INT` reads span the gap.
+
+A future release of Synbad will optionally re-arrange the two assemblies, incorporating gapfill assemblies
+where possible.
+
+## Dependencies
+
+SynBad needs Minimap2 installed. For `gapass` and `gapfill` gap modes, Flye also needs to be installed. To generate
+documentation with `dochtml`, R will need to be installed and a pandoc environment variable must be set, e.g.
+
+    export RSTUDIO_PANDOC=/Applications/RStudio.app/Contents/MacOS/pandoc
+
+For full documentation of the SynBad workflow, run with `dochtml=T` and read the `*.docs.html` file generated.
+
+
+## Commandline options
+
+```
+### ~ Main SynBad run options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+genome1=FILE    : Genome assembly used as the query in the GABLAM searches []
+genome2=FILE    : Genome assembly used as the searchdb in the GABLAM searches []
+basefile=X      : Prefix for output files [synbad]
+gablam=X        : Optional prefix for GABLAM search [defaults to basefile=X]
+gapmode=X       : Diploidocus gap run mode (gapspan/gapass/gapfill) [gapfill]
+minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
+minloclen=INT   : Minimum length for aligned chunk to be kept (local hit length in bp) [1000]
+maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [1]
+maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [10000]
+fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
+minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
+dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead of main run [False]
+### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+bam1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
+paf1=FILE       : Optional PAF file of long reads mapped onto assembly 1 [$BASEFILE1.paf]
+reads1=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
+readtype1=LIST  : List of ont/pb file types matching reads for minimap2 mapping [ont]
+bam2=FILE       : Optional BAM file of long reads mapped onto assembly 2 [$BASEFILE2.bam]
+paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
+reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
+readtype2=LIST  : List of ont/pb file types matching reads for minimap2 mapping [ont]
+### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+```
+
+---
+
+
+
+<br>
+<small>&copy; 2020 Richard Edwards | richard.edwards@unsw.edu.au</small>

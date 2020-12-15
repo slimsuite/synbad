@@ -19,8 +19,8 @@
 """
 Module:       synbad
 Description:  Synteny-based scaffolding adjustment
-Version:      0.2.0
-Last Edit:    14/12/20
+Version:      0.3.0
+Last Edit:    15/12/20
 Copyright (C) 2020  Richard J. Edwards - See source code for GNU License Notice
 
 Function:
@@ -85,6 +85,8 @@ Commandline:
     minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
     maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [1]
     maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [10000]
+    chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
+    chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
     ### ~ Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
     fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
     fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Breakpoint,Inversion,Translocation]
@@ -122,6 +124,7 @@ def history():  ### Program History - only a method for PythonWin collapsing! ##
     # 0.1.3 - Modified the SynBad classification text.
     # 0.1.4 - Modified code to be able to run without long read mapping. Added dochtml output.
     # 0.2.0 - Added fragment=T output.
+    # 0.3.0 - Added chromosome scaffold Translocation restriction.
     '''
 #########################################################################################################################
 def todo():     ### Major Functionality to Add - only a method for PythonWin collapsing! ###
@@ -132,12 +135,12 @@ def todo():     ### Major Functionality to Add - only a method for PythonWin col
     # [Y] : Create initial working version of program.
     # [X] : Add REST outputs to restSetup() and restOutputOrder()
     # [ ] : Add to SLiMSuite or SeqSuite.
-    # [ ] : Add chr1 and chr2 chromosome prefix identifers (PAFScaff prefixes) to restrict Translocations to chromosomes.
+    # [Y] : Add chr1 and chr2 chromosome prefix identifers (PAFScaff prefixes) to restrict Translocations to chromosomes.
     '''
 #########################################################################################################################
 def makeInfo(): ### Makes Info object which stores program details, mainly for initial print to screen.
     '''Makes Info object which stores program details, mainly for initial print to screen.'''
-    (program, version, last_edit, copy_right) = ('SynBad', '0.2.0', 'December 2020', '2020')
+    (program, version, last_edit, copy_right) = ('SynBad', '0.3.0', 'December 2020', '2020')
     description = 'Synteny-based scaffolding adjustment'
     author = 'Dr Richard J. Edwards.'
     comments = ['This program is still in development and has not been published.',rje_obj.zen()]
@@ -201,6 +204,8 @@ class SynBad(rje_obj.RJE_Object):
     Str:str
     - BAM1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
     - BAM2=FILE       : Optional BAM file of long reads mapped onto assembly 2 [$BASEFILE2.bam]
+    - Chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
+    - Chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
     - GABLAM=X        : Optional prefix for GABLAM search [defaults to basefile=X]
     - GapMode=X       : Diploidocus gap run mode (gapspan/gapass/gapfill) [gapfill]
     - Genome1=FILE    : Genome assembly used as the query in the GABLAM searches []
@@ -242,7 +247,7 @@ class SynBad(rje_obj.RJE_Object):
     def _setAttributes(self):   ### Sets Attributes of Object
         '''Sets Attributes of Object.'''
         ### ~ Basics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-        self.strlist = ['BAM1','BAM2','GABLAM','GapMode','Genome1','Genome2','PAF1','PAF2']
+        self.strlist = ['BAM1','BAM2','Chr1','Chr2','GABLAM','GapMode','Genome1','Genome2','PAF1','PAF2']
         self.boollist = ['DocHTML','Fragment']
         self.intlist = ['MaxSynSkip','MaxSynSpan','MinLocLen','MinReadSpan']
         self.numlist = ['MinLocID']
@@ -270,7 +275,7 @@ class SynBad(rje_obj.RJE_Object):
                 self._forkCmd(cmd)  # Delete if no forking
                 ### Class Options (No need for arg if arg = att.lower()) ### 
                 #self._cmdRead(cmd,type='str',att='Att',arg='Cmd')  # No need for arg if arg = att.lower()
-                self._cmdReadList(cmd,'str',['GABLAM','GapMode'])   # Normal strings
+                self._cmdReadList(cmd,'str',['Chr1','Chr2','GABLAM','GapMode'])   # Normal strings
                 #self._cmdReadList(cmd,'path',['Att'])  # String representing directory path 
                 self._cmdReadList(cmd,'file',['BAM1','BAM2','Genome1','Genome2','PAF1','PAF2'])  # String representing file path
                 #self._cmdReadList(cmd,'date',['Att'])  # String representing date YYYY-MM-DD
@@ -325,8 +330,13 @@ class SynBad(rje_obj.RJE_Object):
         * `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
         * `Inversion` = Negative `SynSpan` value.
         * `Translocation` = `SynSpan` indicates matches are on different contigs.
+        * `Fragmentation` = `SynSpan` indicates matches are on different contigs, 1+ of which is not a chromosome scaffold.
         * `Terminal` = Gap is between a local alignment and the end of the query sequence.
         * `Null` = No mapping between genomes for that gap.
+
+        If `chr1=X` and/or `chr2=X` chromosome scaffold prefixes are provided then `Translocation` will be restricted to
+        matches between two different chromosome scaffolds. Matches including one or more non-chromosome scaffolds will
+        be classed as `Fragmentation`.
 
         If `fragment=T`, the assemblies will then be fragmented on gaps that are not Syntenic, unless more than
         `minreadspan=INT` reads span the gap.
@@ -353,13 +363,16 @@ class SynBad(rje_obj.RJE_Object):
         basefile=X      : Prefix for output files [synbad]
         gablam=X        : Optional prefix for GABLAM search [defaults to basefile=X]
         gapmode=X       : Diploidocus gap run mode (gapspan/gapass/gapfill) [gapfill]
-        minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
         minloclen=INT   : Minimum length for aligned chunk to be kept (local hit length in bp) [1000]
+        minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
         maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [1]
         maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [10000]
+        chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
+        chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
+        ### ~ Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
         fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
+        fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Breakpoint,Inversion,Translocation]
         minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
-        dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead of main run [False]
         ### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
         bam1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
         paf1=FILE       : Optional PAF file of long reads mapped onto assembly 1 [$BASEFILE1.paf]
@@ -369,7 +382,8 @@ class SynBad(rje_obj.RJE_Object):
         paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
         reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
         readtype2=LIST  : List of ont/pb file types matching reads for minimap2 mapping [ont]
-        ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+        ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+        dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead of main run [False]
         ```
 
         ---
@@ -426,6 +440,11 @@ class SynBad(rje_obj.RJE_Object):
             db = self.db()
             basefile = self.baseFile()
             dcmd = ['bam=','paf=','reads=','readtype=ont']
+            chr1 = self.getStrLC('Chr1')
+            if chr1: chr1 = self.getStr('Chr1')
+            chr2 = self.getStrLC('Chr2')
+            if chr2: chr2 = self.getStr('Chr2')
+            #!# Add checking of seqnames read in for gaps and local hits and warn if none match #!#
 
             ### ~ [1] Run Diploidocus on each genome ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             self.headLog('DIPLOIDOCUS GAP ANALYSIS',line='=')
@@ -577,6 +596,7 @@ class SynBad(rje_obj.RJE_Object):
             for qh in ('Qry','Hit'):
                 qry = qh
                 hit = {'Qry':'Hit','Hit':'Qry'}[qry]
+                hitchr = {'Qry':chr1,'Hit':chr2}[hit]
                 gapdb = self.db('{0}gap'.format(qh.lower()))
                 #self.debug(gapdb)
                 altdb = {cdb1:cdb2,cdb2:cdb1}[gapdb]
@@ -669,7 +689,10 @@ class SynBad(rje_obj.RJE_Object):
                             gentry['SynBad'] = 'Insertion'
                         elif entry3[hit] != entry5[hit]:
                             gentry['SynSpan'] = '{0}::{1}'.format(entry5[hit],entry3[hit])
-                            gentry['SynBad'] = 'Translocation'
+                            if hitchr and (not entry5[hit].startswith(hitchr) or not entry3[hit].startswith(hitchr)):
+                                gentry['SynBad'] = 'Fragmentation'
+                            else:
+                                gentry['SynBad'] = 'Translocation'
                         elif entry3['Strand'] != entry5['Strand']:
                             gentry['SynSpan'] = '{0}:{1}'.format(entry5[hit],-synspan)
                             gentry['SynBad'] = 'Inversion'

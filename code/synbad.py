@@ -19,8 +19,8 @@
 """
 Module:       synbad
 Description:  Synteny-based scaffolding adjustment
-Version:      0.1.4
-Last Edit:    11/12/20
+Version:      0.2.0
+Last Edit:    14/12/20
 Copyright (C) 2020  Richard J. Edwards - See source code for GNU License Notice
 
 Function:
@@ -85,9 +85,10 @@ Commandline:
     minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
     maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [1]
     maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [10000]
+    ### ~ Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
     fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
+    fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Breakpoint,Inversion,Translocation]
     minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
-    dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead of main run [False]
     ### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
     bam1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
     paf1=FILE       : Optional PAF file of long reads mapped onto assembly 1 [$BASEFILE1.paf]
@@ -97,6 +98,8 @@ Commandline:
     paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
     reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
     readtype2=LIST  : List of ont/pb file types matching reads for minimap2 mapping [ont]
+    ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+    dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead of main run [False]
     ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 """
 #########################################################################################################################
@@ -118,6 +121,7 @@ def history():  ### Program History - only a method for PythonWin collapsing! ##
     # 0.1.2 - Added additional translocation skipping for SynTrans rating.
     # 0.1.3 - Modified the SynBad classification text.
     # 0.1.4 - Modified code to be able to run without long read mapping. Added dochtml output.
+    # 0.2.0 - Added fragment=T output.
     '''
 #########################################################################################################################
 def todo():     ### Major Functionality to Add - only a method for PythonWin collapsing! ###
@@ -128,11 +132,12 @@ def todo():     ### Major Functionality to Add - only a method for PythonWin col
     # [Y] : Create initial working version of program.
     # [X] : Add REST outputs to restSetup() and restOutputOrder()
     # [ ] : Add to SLiMSuite or SeqSuite.
+    # [ ] : Add chr1 and chr2 chromosome prefix identifers (PAFScaff prefixes) to restrict Translocations to chromosomes.
     '''
 #########################################################################################################################
 def makeInfo(): ### Makes Info object which stores program details, mainly for initial print to screen.
     '''Makes Info object which stores program details, mainly for initial print to screen.'''
-    (program, version, last_edit, copy_right) = ('SYNBAD', '0.1.4', 'December 2020', '2020')
+    (program, version, last_edit, copy_right) = ('SynBad', '0.2.0', 'December 2020', '2020')
     description = 'Synteny-based scaffolding adjustment'
     author = 'Dr Richard J. Edwards.'
     comments = ['This program is still in development and has not been published.',rje_obj.zen()]
@@ -410,7 +415,7 @@ class SynBad(rje_obj.RJE_Object):
             self.errorLog(self.zen())
             raise   # Delete this if method error not terrible
 #########################################################################################################################
-    ### <3> ### Additional Class Methods                                                                                #
+    ### <3> ### Main SynBad Methods                                                                                     #
 #########################################################################################################################
     def synBad(self):   ### Main SynBad run method
         '''
@@ -446,18 +451,20 @@ class SynBad(rje_obj.RJE_Object):
             if self.list['Reads1']: cmd1.append('reads={0}'.format(','.join(self.list['Reads1']))); rundip = True
             if self.list['ReadType1']: cmd1.append('readtype={0}'.format(','.join(self.list['ReadType1'])))
             dip1 = diploidocus.Diploidocus(self.log,self.cmd_list+dcmd+cmd1)
+            cdb1 = None
             if rundip:
                 dip1.run()
                 cdb1 = dip1.db('checkpos')
-                self.db().list['Tables'].append(cdb1)
+                cdb1.baseFile(basefile)
                 cdb1.setStr({'Name':'qrygap'})
+                self.db().list['Tables'].append(cdb1)
             else:
                 self.printLog('#READS','No reads or PAF mapping provided for {0}: no read spanning analysis'.format(base1))
                 if not rje.checkForFiles(filelist=['.gaps.tdt'],basename=base1,log=self.log):
                     seqcmd = self.cmd_list + cmd1 + ['summarise=T','gapstats=T','raw=F','dna=T']
-                    rje_seqlist.SeqList(self.log,seqcmd+['autoload=T','seqmode=file','autofilter=F'])
-                    cdb1 = db.addTable('%s.gaps.tdt' % base1,mainkeys=['seqname','start','end'],name='qrygap',ignore=[],expect=True)
-                    cdb1.addField('Span0',evalue=0)
+                    self.obj['SeqList1'] = rje_seqlist.SeqList(self.log,seqcmd+['autoload=T','seqmode=file','autofilter=F'])
+                cdb1 = db.addTable('%s.gaps.tdt' % base1,mainkeys=['seqname','start','end'],name='qrygap',ignore=[],expect=True)
+                cdb1.addField('Span0',evalue=0)
             #checkpos1 = '{0}.checkpos.tdt'.format(base1)
             #cdb1 = db.addTable(checkpos1,mainkeys=['seqname','start','end'],name='qrygap',ignore=[],expect=True)
             cdb1.dataFormat({'seqlen':'int','start':'int','end':'int','Span0':'int'})
@@ -477,24 +484,26 @@ class SynBad(rje_obj.RJE_Object):
             if self.list['Reads2']: cmd2.append('reads={0}'.format(','.join(self.list['Reads2']))); rundip = True
             if self.list['ReadType2']: cmd2.append('readtype={0}'.format(','.join(self.list['ReadType2'])))
             dip2 = diploidocus.Diploidocus(self.log,self.cmd_list+dcmd+cmd2)
+            cdb2 = None
             if rundip:
                 dip2.run()
                 cdb2 = dip2.db('checkpos')
+                cdb2.baseFile(basefile)
                 cdb2.setStr({'Name':'hitgap'})
                 self.db().list['Tables'].append(cdb2)
             else:
                 self.printLog('#READS','No reads or PAF mapping provided for {0}: no read spanning analysis'.format(base2))
                 if not rje.checkForFiles(filelist=['.gaps.tdt'],basename=base2,log=self.log):
                     seqcmd = self.cmd_list + cmd2 + ['summarise=T','gapstats=T','raw=F','dna=T']
-                    rje_seqlist.SeqList(self.log,seqcmd+['autoload=T','seqmode=file','autofilter=F'])
+                    self.obj['SeqList2'] = rje_seqlist.SeqList(self.log,seqcmd+['autoload=T','seqmode=file','autofilter=F'])
                     # dip2.cmd_list.append('gapstats')    # Try to run automatically if possible
                     # seqin = dip2.seqinObj()
                     # if not rje.checkForFiles(filelist=['.gaps.tdt'],basename=base2,log=self.log):
                     #     seqin.setBool({'Raw':False,'GapStats':True,'DNA':True})
                     #     seqin.str['SeqType'] = 'dna'
                     #     seqin.summarise()
-                    cdb2 = db.addTable('%s.gaps.tdt' % base2,mainkeys=['seqname','start','end'],name='hitgap',ignore=[],expect=True)
-                    cdb2.addField('Span0',evalue=0)
+                cdb2 = db.addTable('%s.gaps.tdt' % base2,mainkeys=['seqname','start','end'],name='hitgap',ignore=[],expect=True)
+                cdb2.addField('Span0',evalue=0)
             #checkpos2 = '{0}.checkpos.tdt'.format(base2)
             #cdb2 = db.addTable(checkpos2,mainkeys=['seqname','start','end'],name='hitgap',ignore=[],expect=True)
             cdb2.dataFormat({'seqlen':'int','start':'int','end':'int','Span0':'int'})
@@ -787,30 +796,153 @@ class SynBad(rje_obj.RJE_Object):
             # If `fragment=T`, the assemblies will then be fragmented on gaps that are not Syntenic, unless more than
             # `minreadspan=INT` reads span the gap.
             if self.getBool('Fragment'):
-                self.printLog('#DEV','Fragment=T not yet implemented.')
+                self.fragment()
             else:
                 self.printLog('#FRAG','No fragmentation (fragment=F).')
 
             # A future release of Synbad will optionally re-arrange the two assemblies, incorporating gapfill assemblies
             # where possible.
-            #
-            # ## Dependencies
-            #
-            # SynBad needs Minimap2 installed. For `gapass` and `gapfill` run modes, Flye also needs to be installed.
-
-
-
-
-            ### ~ Main SynBad run options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-            #maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [10000]
-            #fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
-            #minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
-
-            ## ~ [1a] Input sequences ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
-            #self.obj['Genome1'] =  #i# Only need for fragmentation
 
             return
         except: self.errorLog('%s.synBad error' % self.prog())
+#########################################################################################################################
+    def seqObjSetup(self):   ### Loads the two genomes into sequence list objects
+        '''
+        SynBad is a tool for comparing two related genome assemblies and identify putative translocations and inversions
+        between the two that correspond to gap positions. These positions could indicate misplaced scaffolding.
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            ## ~ [1a] Genome1 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            if 'SeqList1' not in self.obj or not self.obj['SeqList1']:
+                base1 = rje.baseFile(self.getStr('Genome1'),strip_path=True)
+                cmd1 = ['seqin={0}'.format(self.getStr('Genome1')),
+                        'runmode={0}'.format(self.getStrLC('GapMode')),
+                        'basefile={0}'.format(base1)]
+                seqcmd = self.cmd_list + cmd1 + ['summarise=F','gapstats=F','raw=F','dna=T']
+                self.obj['SeqList1'] = rje_seqlist.SeqList(self.log,seqcmd+['autoload=T','seqmode=file','autofilter=F'])
+            ## ~ [1b] Genome2 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            if 'SeqList2' not in self.obj or not self.obj['SeqList2']:
+                base2 = rje.baseFile(self.getStr('Genome2'),strip_path=True)
+                cmd2 = ['seqin={0}'.format(self.getStr('Genome2')),
+                        'runmode={0}'.format(self.getStrLC('GapMode')),
+                        'basefile={0}'.format(base2)]
+                seqcmd = self.cmd_list + cmd2 + ['summarise=F','gapstats=F','raw=F','dna=T']
+                self.obj['SeqList2'] = rje_seqlist.SeqList(self.log,seqcmd+['autoload=T','seqmode=file','autofilter=F'])
+            return
+        except: self.errorLog('%s.seqObjSetup error' % self.prog())
+#########################################################################################################################
+    def fragment(self):   ### SynBad fragmentation
+        '''
+        SynBad is a tool for comparing two related genome assemblies and identify putative translocations and inversions
+        between the two that correspond to gap positions. These positions could indicate misplaced scaffolding.
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            self.seqObjSetup()
+            seqobj = {}
+            seqobj['qryfrag'] = self.obj['SeqList1']
+            seqobj['hitfrag'] = self.obj['SeqList2']
+            base1 = rje.baseFile(self.getStr('Genome1'),strip_path=True)
+            base2 = rje.baseFile(self.getStr('Genome2'),strip_path=True)
+            db = self.db()
+            basefile = self.baseFile()
+            qrygap = self.db('qrygap')
+            if not qrygap:
+                qrygap = db.addTable('%s.gaps.tdt' % base1,mainkeys=['seqname','start','end'],name='qrygap',ignore=[],expect=True)
+            qrygap.dataFormat({'seqlen':'int','start':'int','end':'int','Span0':'int'})
+            qryfrag = db.copyTable(qrygap,'qryfrag',replace=True,add=True)
+            hitgap = self.db('hitgap')
+            if not hitgap:
+                hitgap = db.addTable('%s.gaps.tdt' % base2,mainkeys=['seqname','start','end'],name='hitgap',ignore=[],expect=True)
+            hitgap.dataFormat({'seqlen':'int','start':'int','end':'int','Span0':'int'})
+            hitfrag = db.copyTable(hitgap,'hitfrag',replace=True,add=True)
+            ### ~ [1] Filter gaps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            # * `Aligned` = Gap is found in the middle of a local alignment to the Hit
+            # * `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
+            # * `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
+            # * `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
+            # * `Inversion` = Negative `SynSpan` value.
+            # * `Translocation` = `SynSpan` indicates matches are on different contigs.
+            # * `Terminal` = Gap is between a local alignment and the end of the query sequence.
+            # * `Null` = No mapping between genomes for that gap.
+            self.headLog('SYNBAD GAP FILTER',line='=')
+            for table in (qryfrag,hitfrag):
+                table.addField('fragid',evalue='')
+                for entry in table.entries():
+                    if entry['Span0'] < self.getInt('MinReadSpan') and entry['SynBad'] in ['Breakpoint','Inversion','Translocation']:
+                        entry['fragid'] = 'Filter'
+                table.dropEntriesDirect('fragid',['Filter'],inverse=True)
+                table.newKey(['seqname','start','end','fragid'])
+                table.addField('syn5',evalue='')
+                table.addField('syn3',evalue='')
+            ### ~ [2] Fragment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            self.headLog('FRAGMENT ON GAPS',line='=')
+            for frag in ('qryfrag','hitfrag'):
+                table = self.db(frag)
+                #self.debug('{0} {1}: {2}'.format(table,table.name(),table.fields()))
+                seqlist = seqobj[frag]
+                prev = {'seqname':None}
+                fragname = ''; fx = 1
+                for ekey in table.dataKeys():
+                    entry = table.data(ekey)
+                    #i# Add extra 5' fragment for each sequence
+                    if entry['seqname'] != prev['seqname']:
+                        prev = rje.combineDict({},entry)
+                        prev['start'] = 1
+                        prev['end'] = entry['start'] - 1
+                        fragname = entry['seqname']; fx = 1
+                        if rje.matchExp('\S+_\S+__(\S+)',fragname): fragname = rje.matchExp('\S+_\S+__(\S+)',fragname)[0]
+                        prev['fragid'] = '{0}.{1}'.format(fragname,fx); fx += 1
+                        prev['syn5'] = 'Terminal'
+                        prev['syn3'] = 'Terminal'    #i# May be over-written
+                        prev = table.addEntry(prev,remake=False)
+                    #i# Update details of this entry
+                    prev['syn3'] = entry['SynBad']
+                    prev['end'] = entry['start'] - 1
+                    entry['start'] = entry['end'] + 1
+                    entry['fragid'] = '{0}.{1}'.format(fragname,fx); fx += 1
+                    entry['syn5'] = entry['SynBad']
+                    entry['syn3'] = 'Terminal'                          #i# May be over-written
+                    entry['end'] = entry['seqlen']                      #i# May be overwritten
+                    prev = entry
+                    #self.bugPrint(table.entrySummary(entry,collapse=True))
+                    if entry['seqname'] == 'NSCUSCAFF155': self.debug('?')
+                #i# Add sequences without any gaps
+                table.remakeKeys()
+                seqnames = rje.sortKeys(table.index('seqname'))
+                self.printLog('#FRAG','{0} fragments from {1} sequences with gaps'.format(rje.iStr(table.entryNum()),rje.iLen(seqnames)))
+                sx = 0
+                for seq in seqlist.seqs():
+                    seqname = seqlist.shortName(seq)
+                    if seqname not in seqnames:
+                        fragname = seqname
+                        if rje.matchExp('\S+_\S+__(\S+)',fragname): fragname = rje.matchExp('\S+_\S+__(\S+)',fragname)[0]
+                        fragid = '{0}.1'.format(fragname)
+                        table.addEntry({'fragid':fragid,'seqname':seqname,'start':1,'seqlen':seqlist.seqLen(seq),'end':seqlist.seqLen(seq),'syn5':'Terminal','syn3':'Terminal'})
+                        sx += 1
+                self.printLog('#SEQ','Added {0} full-length sequences without gaps'.format(rje.iStr(sx)))
+                #i# Tidy up fragment table
+                #self.debug('{0} {1}: {2}'.format(table,table.name(),table.fields()))
+                #table.newKey(['fragid'])
+                table.setFields(['fragid','seqname','start','end','seqlen','syn5','syn3'])
+                table.saveToFile()
+                #self.debug('{0} {1}: {2}'.format(table,table.name(),table.fields()))
+            ### ~ [3] Output sequences ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+                seqdict = seqlist.seqNameDic()
+                fragfas = '{0}.{1}.fasta'.format(basefile,frag)
+                rje.backup(self,fragfas)
+                FRAGFAS = open(fragfas,'w'); ex = 0
+                for entry in table.entrySort():
+                    self.progLog('\r#FASOUT','{0} fragments output to {1}'.format(rje.iStr(ex),fragfas)); ex += 1
+                    #self.bugPrint(table.entrySummary(entry,collapse=True))
+                    seq = seqdict[entry['seqname']]
+                    (seqname,sequence) = seqlist.getSeq(seq)
+                    FRAGFAS.write('>{0}\n{1}\n'.format(entry['fragid'],sequence[entry['start']-1:entry['end']]))
+                FRAGFAS.close()
+                self.printLog('\r#FASOUT','{0} fragments output to {1}'.format(rje.iStr(table.entryNum()),fragfas))
+
+        except:
+            self.errorLog('%s.fragment error' % self.prog())
+            raise   # Delete this if method error not terrible
 #########################################################################################################################
 ### End of SECTION II: SynBad Class                                                                                     #
 #########################################################################################################################

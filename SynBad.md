@@ -1,7 +1,7 @@
-# SYNBAD: Synteny-based scaffolding adjustment
+# SynBad: Synteny-based scaffolding adjustment
 
 ```
-SYNBAD v0.1.4
+SynBad v0.2.0
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.

@@ -19,7 +19,7 @@
 """
 Module:       synbad
 Description:  Synteny-based scaffolding adjustment
-Version:      0.3.0
+Version:      0.4.0
 Last Edit:    15/12/20
 Copyright (C) 2020  Richard J. Edwards - See source code for GNU License Notice
 
@@ -55,7 +55,8 @@ Function:
     * `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
     * `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
     * `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
-    * `Inversion` = Negative `SynSpan` value.
+    * `Duplication` = Overlapping flanking hits on the same strand.
+    * `Inversion` = Flanking hits are on alternative strands.
     * `Translocation` = `SynSpan` indicates matches are on different contigs.
     * `Terminal` = Gap is between a local alignment and the end of the query sequence.
     * `Null` = No mapping between genomes for that gap.
@@ -125,6 +126,7 @@ def history():  ### Program History - only a method for PythonWin collapsing! ##
     # 0.1.4 - Modified code to be able to run without long read mapping. Added dochtml output.
     # 0.2.0 - Added fragment=T output.
     # 0.3.0 - Added chromosome scaffold Translocation restriction.
+    # 0.4.0 - Added an Duplication rating in place of Breakpoint for overlapping flanking hits; added top sequence pairs.
     '''
 #########################################################################################################################
 def todo():     ### Major Functionality to Add - only a method for PythonWin collapsing! ###
@@ -140,7 +142,7 @@ def todo():     ### Major Functionality to Add - only a method for PythonWin col
 #########################################################################################################################
 def makeInfo(): ### Makes Info object which stores program details, mainly for initial print to screen.
     '''Makes Info object which stores program details, mainly for initial print to screen.'''
-    (program, version, last_edit, copy_right) = ('SynBad', '0.3.0', 'December 2020', '2020')
+    (program, version, last_edit, copy_right) = ('SynBad', '0.4.0', 'December 2020', '2020')
     description = 'Synteny-based scaffolding adjustment'
     author = 'Dr Richard J. Edwards.'
     comments = ['This program is still in development and has not been published.',rje_obj.zen()]
@@ -328,7 +330,8 @@ class SynBad(rje_obj.RJE_Object):
         * `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
         * `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
         * `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
-        * `Inversion` = Negative `SynSpan` value.
+        * `Duplication` = Overlapping flanking hits on the same strand.
+        * `Inversion` = Flanking hits are on alternative strands.
         * `Translocation` = `SynSpan` indicates matches are on different contigs.
         * `Fragmentation` = `SynSpan` indicates matches are on different contigs, 1+ of which is not a chromosome scaffold.
         * `Terminal` = Gap is between a local alignment and the end of the query sequence.
@@ -680,7 +683,8 @@ class SynBad(rje_obj.RJE_Object):
                         # * `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
                         # * `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
                         # * `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
-                        # * `Inversion` = Negative `SynSpan` value.
+                        # * `Duplication` = Overlapping flanking hits on the same strand.
+                        # * `Inversion` = Flanking hits are on alternative strands.
                         # * `Translocation` = `SynSpan` indicates matches are on different contigs.
                         # * `Terminal` = Gap is between a local alignment and the end of the query sequence.
                         # * `Null` = No mapping between genomes for that gap.
@@ -694,9 +698,12 @@ class SynBad(rje_obj.RJE_Object):
                             else:
                                 gentry['SynBad'] = 'Translocation'
                         elif entry3['Strand'] != entry5['Strand']:
-                            gentry['SynSpan'] = '{0}:{1}'.format(entry5[hit],-synspan)
+                            gentry['SynSpan'] = '{0}:{1}'.format(entry5[hit],synspan)
                             gentry['SynBad'] = 'Inversion'
-                        elif (entry3['Strand'] == '+' and gap3 < gap5) or (entry3['Strand'] == '-' and gap3 > gap5) or ((synspan - gentry['GapSpan']) > self.getInt('MaxSynSpan')):
+                        elif (entry3['Strand'] == '+' and gap3 < gap5) or (entry3['Strand'] == '-' and gap3 > gap5):
+                            gentry['SynSpan'] = '{0}:{1}'.format(entry5[hit],-synspan)
+                            gentry['SynBad'] = 'Duplication'
+                        elif (synspan - gentry['GapSpan']) > self.getInt('MaxSynSpan'):
                             gentry['SynSpan'] = '{0}:{1}'.format(entry5[hit],synspan)
                             gentry['SynBad'] = 'Breakpoint'
                         else:
@@ -808,7 +815,27 @@ class SynBad(rje_obj.RJE_Object):
                 self.db(qh.lower()).dropField('AlnNum')
                 self.db(qh.lower()).saveToFile()
 
-            ## ~ [3e] Summary reports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            ## ~ [3e] Top-matched pairs only ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            pairs = []
+            for qh in ('Qry','Hit'):
+                topdb = db.copyTable(self.db(qh.lower()),'top{0}'.format(qh.lower()),replace=True,add=True)
+                topdb.keepFields(['Qry','Hit','Length']+topdb.keys())
+                topdb.compress(['Qry','Hit'],default='sum')
+                topdb.keepFields(['Qry','Hit','Length'])
+                topdb.rankFieldByIndex(qh,'Length',newfield='Rank',rev=True,absolute=True,lowest=True,unique=False,warn=True,highest=False)
+                topdb.dropEntriesDirect('Rank',[1],inverse=True,log=True,force=False)
+                pairs += topdb.dataKeys()
+            for qh in ('Qry','Hit'):
+                topdb = db.copyTable(self.db(qh.lower()),'{0}pairs'.format(qh.lower()),replace=True,add=True)
+                ex = 0.0; etot = topdb.entryNum()
+                for ekey in topdb.datakeys()[0:]:
+                    self.progLog('\r#PAIRS','Reducing %s table to top-aligned pairs: %.2f%%' % (qh,ex/etot)); ex += 100
+                    entry = topdb.data(ekey)
+                    if (entry['Qry'],entry['Hit']) not in pairs: topdb.dict['Data'].pop(ekey)
+                self.printLog('\r#PAIRS','Reduced %s table to %s alignments between top sequence pairs.' % (qh,rje.iStr(topdb.entryNum())))
+                topdb.saveToFile()
+
+            ## ~ [3f] Summary reports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
             self.headLog(base1,line='-')
             self.db('qrygap').indexReport('SynBad')
             self.headLog(base2,line='-')

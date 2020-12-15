@@ -1,7 +1,7 @@
 # SynBad: Synteny-based scaffolding adjustment
 
 ```
-SynBad v0.3.0
+SynBad v0.4.0
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.
@@ -40,7 +40,8 @@ Gaps will then be classified according to the associated `GapSpan` and `SynSpan`
 * `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
 * `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
 * `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
-* `Inversion` = Negative `SynSpan` value.
+* `Duplication` = Overlapping flanking hits on the same strand.
+* `Inversion` = Flanking hits are on alternative strands.
 * `Translocation` = `SynSpan` indicates matches are on different contigs.
 * `Fragmentation` = `SynSpan` indicates matches are on different contigs, 1+ of which is not a chromosome scaffold.
 * `Terminal` = Gap is between a local alignment and the end of the query sequence.

@@ -294,7 +294,7 @@ class Forker(rje_obj.RJE_Object):
         '''Sets a new fork going using the data in fdict.'''
         try:### ~ [0] ~ Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             fdict['cmd'] = self.list['ToFork'].pop(0)
-            fdict['ID'] = 'Fork %d' % self.list['Forked'].index(fdict)
+            fdict['ID'] = 'Fork -%d' % (len(self.list['ToFork'])+1)
             fdict['FID'] = 'f_%s' % rje.randomString(6)
             if self.getBool('RjePy'):
                 fdict['Log'] = '%s%s.log' % (self.getStr('RunPath'),fdict['FID'])

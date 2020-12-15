@@ -3239,14 +3239,14 @@ class Diploidocus(rje_obj.RJE_Object):
                     self.printLog('#GAPASS','{0} existing assemblies skipped (force=F).'.format(rje.iStr(skipx)))
 
                 ### ~ [4] ~ Fork out assemblies ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-                self.printLog('#FORK','{0} gap alignments to fork out'.format(rje.iLen(asslist)))
+                self.printLog('#FORK','{0} gap assemblies to fork out'.format(rje.iLen(asslist)))
                 ## ~ [4a] Setup forking ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
                 forker = self.obj['Forker']
                 forker.list['ToFork'] = []
                 for afork in asslist:
                     forker.list['ToFork'].append(afork[0])
                 self.debug('\n'.join(forker.list['ToFork']))
-                ## ~ [4b] Fork out alignments ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+                ## ~ [4b] Fork out assemblies ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
                 if forker.list['ToFork']:
                     if self.getNum('Forks') < 1:
                         #i# Warn lack of forking
@@ -3257,14 +3257,14 @@ class Diploidocus(rje_obj.RJE_Object):
                             #self.printLog('#SYS',forkcmd)
                             #os.system(forkcmd)
                     else:
-                        self.printLog('#FORK','Forking alignments using {0} x {1} threads'.format(self.getNum('Forks'),self.getNum('SubForks')))
+                        self.printLog('#FORK','Forking assemblies using {0} x {1} threads'.format(self.getNum('Forks'),self.getNum('SubForks')))
                         if forker.run():
-                            self.printLog('#FORK','Forking of Alignments completed.')
+                            self.printLog('#FORK','Forking of assemblies completed.')
                         else:
                             try:
-                                self.errorLog('Alignment forking did not complete',printerror=False,quitchoice=True)
+                                self.errorLog('Assembly forking did not complete',printerror=False,quitchoice=True)
                             except:
-                                raise RuntimeError('Alignment forking did not complete')
+                                raise RuntimeError('Assembly forking did not complete')
                 ## ~ [4c] Process assemblies ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
                 assx = 0; failx = 0
                 for afork in asslist:

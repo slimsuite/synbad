@@ -19,8 +19,8 @@
 """
 Module:       rje_paf
 Description:  Minimap2 PAF parser and converter
-Version:      0.10.3
-Last Edit:    31/08/20
+Version:      0.12.0
+Last Edit:    24/03/21
 Copyright (C) 2019  Richard J. Edwards - See source code for GNU License Notice
 
 Function:
@@ -66,7 +66,7 @@ Commandline:
     mapopt=CDICT    : Dictionary of minimap2 options [N:100,p:0.0001,x:asm5]
     mapsplice=T/F   : Switch default minimap2 options to `-x splice -uf -C5` [False]
     reads=FILELIST  : List of fasta/fastq read files for minimap2 mapping to BAM. Wildcard allowed. Can be gzipped. []
-    readtype=LIST   : List of ont/pb file types matching reads for minimap2 mapping [ont]
+    readtype=LIST   : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
     ### ~ Coverage checking mode (dev only) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
     checkpos=TDTFILE: File of Locus, Start, End positions for read coverage checking [None]
     checkfields=LIST: Fields in checkpos file to give Locus, Start and End for checking [Locus,Start,End]
@@ -77,6 +77,7 @@ Commandline:
     qcut=X          : Min. quality score for a mapped read to be included [0]
     minqn=X         : Min. number of non-N reads meeting qcut for output (after indel filtering) [10]
     rid=T/F         : Whether to include Read ID (number) lists for each allele [True]
+    readnames=T/F   : Output the read names to the RID file [False]
     indels=T/F      : Whether to include indels in "SNP" parsing [True]
     skiploci=LIST   : List of loci to exclude from pileup parsing (e.g. mitochondria) []
     mincut=X        : Minimum read count for minor allele (proportion if <1) [0.05]
@@ -122,6 +123,8 @@ def history():  ### Program History - only a method for PythonWin collapsing! ##
     # 0.10.1 - Added spanid=X: Generate sets of read IDs that span checkpos regions, based on values of field X []
     # 0.10.2 - Fixed formatting for Python 2.6 back compatibility for servers.
     # 0.10.3 - Fixing issues of PAF files not being generated.
+    # 0.11.0 - Added HiFi read type.
+    # 0.12.0 - Added readnames=T/F : Output the read names to the RID file [False]
     '''
 #########################################################################################################################
 def todo():     ### Major Functionality to Add - only a method for PythonWin collapsing! ###
@@ -154,7 +157,7 @@ def todo():     ### Major Functionality to Add - only a method for PythonWin col
 #########################################################################################################################
 def makeInfo(): ### Makes Info object which stores program details, mainly for initial print to screen.
     '''Makes Info object which stores program details, mainly for initial print to screen.'''
-    (program, version, last_edit, copy_right) = ('RJE_PAF', '0.10.3', 'August 2020', '2019')
+    (program, version, last_edit, copy_right) = ('RJE_PAF', '0.12.0', 'March 2021', '2019')
     description = 'Minimap2 PAF parser and converter'
     author = 'Dr Richard J. Edwards.'
     comments = ['This program is still in development and has not been published.',rje_obj.zen()]
@@ -294,6 +297,7 @@ class PAF(rje_obj.RJE_Object):
     - LocalAln = Whether to keep local alignments in Local Table [False]
     - MapSplice=T/F   : Switch default minimap2 options to `-x splice -uf -C5` [False]
     - MockBLAST = Whether to output mock BLAST headers even when not appropriate [True]
+    - ReadNames=T/F   : Output the read names to the RID file [False]
     - RID=T/F         : Whether to include Read ID (number) lists for each allele [True]
     - SNPTableOut=T/F : Generated output of filtered variants to SNP Table [False]
     - UniqueHit=T/F   : Option to use *.hitunique.tdt table of unique coverage for GABLAM coverage stats [False]
@@ -316,7 +320,7 @@ class PAF(rje_obj.RJE_Object):
     - CheckFields=LIST    : Fields in checkpos file to give Locus, Start and End for checking [Locus,Start,End]
     - CheckFlanks=LIST       : List of lengths flanking check regions that must also be spanned by reads [0,100,1000,5000]
     - Reads=FILELIST  : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
-    - ReadType=LIST   : List of ont/pb file types matching reads for minimap2 mapping [ont]
+    - ReadType=LIST   : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
     - SkipLoci=LIST   : List of loci to exclude from pileup parsing (e.g. mitochondria) []
 
     Dict:dictionary    
@@ -334,7 +338,7 @@ class PAF(rje_obj.RJE_Object):
         '''Sets Attributes of Object.'''
         ### ~ Basics ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
         self.strlist = ['CheckPos','Minimap2','PAFIn','SeqIn','SpanID','Reference','TmpDir']
-        self.boollist = ['AlnSeq','BiAllelic','IgnoreN','IgnoreRef','Indels','LocalAln','MapSplice','MockBLAST','RID','SNPTableOut','UniqueHit','UniqueOut']
+        self.boollist = ['AlnSeq','BiAllelic','IgnoreN','IgnoreRef','Indels','LocalAln','MapSplice','MockBLAST','ReadNames','RID','SNPTableOut','UniqueHit','UniqueOut']
         self.intlist = ['AbsMinCut','EndExtend','MinLocLen','MinQN','QCut']
         self.numlist = ['MinCut','MinLocID']
         self.filelist = []
@@ -345,7 +349,7 @@ class PAF(rje_obj.RJE_Object):
         self._setDefaults(str='None',bool=False,int=0,num=0.0,obj=None,setlist=True,setdict=True,setfile=True)
         self.setStr({'Minimap2':'minimap2','TmpDir':'./tmp/'})
         self.setBool({'AlnSeq':False,'LocalAln':False,'MapSplice':False,'MockBLAST':True,'UniqueHit':False,'UniqueOut':True,
-                      'BiAllelic':False,'IgnoreN':True,'IgnoreRef':True,'Indels':True,'RID':True,'SNPTableOut':False})
+                      'BiAllelic':False,'IgnoreN':True,'IgnoreRef':True,'Indels':True,'ReadNames':False,'RID':True,'SNPTableOut':False})
         self.setInt({'AbsMinCut':2,'EndExtend':0,'MinLocLen':1,'MinQN':10,'QCut':0})
         self.setNum({'MinCut':0.05,'MinLocID':0.0})
         self.dict['MapOpt'] = {} #'N':'100','p':'0.0001','x':'asm5'}
@@ -373,7 +377,7 @@ class PAF(rje_obj.RJE_Object):
                 self._cmdReadList(cmd,'path',['TmpDir'])  # String representing directory path
                 self._cmdReadList(cmd,'file',['CheckPos','PAFIn','SeqIn','Reference'])  # String representing file path
                 #self._cmdReadList(cmd,'date',['Att'])  # String representing date YYYY-MM-DD
-                self._cmdReadList(cmd,'bool',['AlnSeq','BiAllelic','IgnoreN','IgnoreRef','Indels','LocalAln','MapSplice','MockBLAST','RID','SNPTableOut','UniqueHit','UniqueOut'])  # True/False Booleans
+                self._cmdReadList(cmd,'bool',['AlnSeq','BiAllelic','IgnoreN','IgnoreRef','Indels','LocalAln','MapSplice','MockBLAST','ReadNames','RID','SNPTableOut','UniqueHit','UniqueOut'])  # True/False Booleans
                 self._cmdReadList(cmd,'int',['AbsMinCut','EndExtend','MinLocLen','MinQN','QCut'])   # Integers
                 self._cmdReadList(cmd,'perc',['MinLocID'])   # 0-100 percentage, converted x100 if <=1
                 self._cmdReadList(cmd,'float',['MinCut']) # Floats
@@ -2443,14 +2447,15 @@ class PAF(rje_obj.RJE_Object):
 #########################################################################################################################
     ### <8> ### Long read mapping to PAF/BAM files                                                                      #
 #########################################################################################################################
-    def longreadMinimapPAF(self):  ### Performs long read versus assembly minimap2 and saves to PAF
+    def longreadMinimapPAF(self,paffile=None):  ### Performs long read versus assembly minimap2 and saves to PAF
         '''
         Performs long read versus assembly minimap2 and saves to PAF
         :return: paffile
         '''
         try:### ~ [1] ~ Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             paf = self
-            paffile = self.baseFile() + '.paf'
+            if not paffile:
+                paffile = self.baseFile() + '.paf'
 
             ### ~ [2] ~ Generate individual BAM files ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             if self.force() or not rje.exists(paffile):
@@ -2461,7 +2466,7 @@ class PAF(rje_obj.RJE_Object):
                 #!# Check these BAM files have headers! #!#
                 paflist = []; rx = 0
                 if not self.list['ReadType']:
-                    self.warnLog('Read Type not given (pb/ont): check readtype=LIST. Will use "ont".')
+                    self.warnLog('Read Type not given (pb/ont/hifi): check readtype=LIST. Will use "ont".')
                 elif len(self.list['ReadType']) == 1 and len(self.list['Reads']) != 1:
                     self.printLog('#READS','Using "%s" as read type for all long reads' % self.list['ReadType'][0])
                 elif len(self.list['ReadType']) != len(self.list['Reads']):
@@ -2472,21 +2477,24 @@ class PAF(rje_obj.RJE_Object):
                         try: rtype = self.list['ReadType'][rx]; rx +=1
                         except: rtype = self.list['ReadType'][0]; rx = 1
                         if rtype in ['pacbio','pac']: rtype = 'pb'
-                        if rtype not in ['ont','pb']:
-                            self.warnLog('Read Type "%s" not recognised (pb/ont): check readtype=LIST. Will use "ont".' % rtype)
+                        if rtype in ['hifi','ccs']: rtype = 'hifi'
+                        if rtype not in ['ont','pb','hifi']:
+                            self.warnLog('Read Type "%s" not recognised (pb/ont/hifi): check readtype=LIST. Will use "ont".' % rtype)
                             rtype = 'ont'
                     else: rtype = 'ont'
                     prefix = '{0}.{1}'.format(rje.baseFile(self.getStr('SeqIn'),strip_path=True),rje.baseFile(readfile,strip_path=True))
                     maplog = '{0}.log'.format(prefix)
                     ## ~ [2a] Make SAM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
                     maprun = '{0} -t {1} --secondary=no -o {2}.paf -L -x map-{3} {4} {5}'.format(paf.getStr('Minimap2'),self.threads(),prefix,rtype,self.getStr('SeqIn'),readfile)
+                    if rtype in ['hifi']:
+                        maprun = '{0} -t {1} --secondary=no -o {2}.paf -L -x asm20 {4} {5}'.format(paf.getStr('Minimap2'),self.threads(),prefix,rtype,self.getStr('SeqIn'),readfile)
                     logline = self.loggedSysCall(maprun,maplog,append=False)
                     #!# Add check that run has finished #!#
                     rpfile = '{0}.paf'.format(prefix)
                     if not rje.exists(rpfile): raise IOError('Minimap2 output not found: {0}'.format(rpfile))
                     paflist.append(rpfile)
 
-            ### ~ [3] ~ Merge individual BAM files ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            ### ~ [3] ~ Merge individual PAF files ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
                 if len(paflist) > 1:
                     # samtools merge - merges multiple sorted input files into a single output.
                     bammerge = 'cat {0} > {1}'.format(' '.join(paflist),paffile)
@@ -2529,7 +2537,8 @@ class PAF(rje_obj.RJE_Object):
                         try: rtype = self.list['ReadType'][rx]; rx +=1
                         except: rtype = self.list['ReadType'][0]; rx = 1
                         if rtype in ['pacbio','pac']: rtype = 'pb'
-                        if rtype not in ['ont','pb']:
+                        if rtype in ['hifi','ccs']: rtype = 'hifi'
+                        if rtype not in ['ont','pb','hifi']:
                             self.warnLog('Read Type "%s" not recognised (pb/ont): check readtype=LIST. Will use "ont".' % rtype)
                             rtype = 'ont'
                     else: rtype = 'ont'
@@ -2537,6 +2546,8 @@ class PAF(rje_obj.RJE_Object):
                     maplog = '{0}.log'.format(prefix)
                     ## ~ [2a] Make SAM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
                     maprun = '{0} -t {1} --secondary=no -o {2}.sam -L -ax map-{3} {4} {5}'.format(paf.getStr('Minimap2'),self.threads(),prefix,rtype,self.getStr('SeqIn'),readfile)
+                    if rtype in ['hifi']:
+                        maprun = '{0} -t {1} --secondary=no -o {2}.sam -L -ax asm20 {4} {5}'.format(paf.getStr('Minimap2'),self.threads(),prefix,rtype,self.getStr('SeqIn'),readfile)
                     logline = self.loggedSysCall(maprun,maplog,append=False)
                     #!# Add check that run has finished #!#
                     ## ~ [2b] Converting SAM to BAM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##

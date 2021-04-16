@@ -15,3 +15,7 @@ echo >> ../SynBad.md
 grep -A 10000 tool synbad.docs.Rmd >> ../SynBad.md
 
 cp synbad.docs.html ../index.html
+cp ../SynBad.md ../README.md
+
+ls -lrth ../
+ls -lrth

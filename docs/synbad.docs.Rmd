@@ -1,7 +1,7 @@
 ---
-title: "SynBad V0.4.0 Documentation"
+title: "SynBad V0.7.0 Documentation"
 author: "Richard J. Edwards"
-date: "2020-12-15"
+date: "2021-04-16"
 output:
   html_document:
     css: http://www.slimsuite.unsw.edu.au/stylesheets/slimhtml.css
@@ -50,30 +50,63 @@ small gaps), `SynSpan` or `GapSpan` will have a value of zero.
 
 Gaps will then be classified according to the associated `GapSpan` and `SynSpan` values:
 
-* `Aligned` = Gap is found in the middle of a local alignment to the Hit
-* `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 10kb).
-* `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
-* `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
-* `Duplication` = Overlapping flanking hits on the same strand.
-* `Inversion` = Flanking hits are on alternative strands.
-* `Translocation` = `SynSpan` indicates matches are on different contigs.
-* `Fragmentation` = `SynSpan` indicates matches are on different contigs, 1+ of which is not a chromosome scaffold.
-* `Terminal` = Gap is between a local alignment and the end of the query sequence.
+* `Aln` = `Aligned` = Gap is found in the middle of a local alignment to the Hit
+* `Syn` = `Syntenic` = Difference between positive `SynSpan` and `GapSpan` is `maxsynspan=INT` or less (default 25 kb).
+* `Ins` = `Insertion` = Achieved `Syntenic` rating by skipping upto `maxsynskip=INT` local alignments and max `maxsynspan=INT` bp in both Qry and Hit.
+* `Brk` = `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
+* `Dup` = `Duplication` = Overlapping flanking hits on the same strand.
+* `Inv` = `Inversion` = Flanking hits are on alternative strands.
+* `Tran` = `Translocation` = `SynSpan` indicates matches are on different contigs.
+* `Frag` = `Fragmentation` = `SynSpan` indicates matches are on different contigs, 1+ of which is not a chromosome scaffold.
+* `Term` = `Terminal` = Gap is between a local alignment and the end of the query sequence.
+* `Span` = `Spanned` = Any gaps with Aligned or Syntenic rating that are spanned by at least `synreadspan=INT` reads.
 * `Null` = No mapping between genomes for that gap.
 
 If `chr1=X` and/or `chr2=X` chromosome scaffold prefixes are provided then `Translocation` will be restricted to
 matches between two different chromosome scaffolds. Matches including one or more non-chromosome scaffolds will
 be classed as `Fragmentation`.
 
+Following gap fixes for inversions and translocations/breakpoints (below), following
+
+After the initial mapping and GABLAM unique hit reduction, SynBad will further compress the Qry-Hit pairs by
+combining collinear hits between Qry-Hit pairs into larger blocks. Merged hits must be within `maxsynspan=INT`
+bp, overlap by no more than `maxoverlap=INT` bp, and have no intervening assembly gaps. An initial pass compares
+adjacent hits in position order. This is followed by iterative compressions where up to `maxsynskip=INT`
+intervening hits will be incorporated, providing there are no assembly gaps between the merged hits. This will
+start with the longest local hit, scanning downstream and then upstream for hits to merge, with increasing numbers
+of intervening hits up to `maxsynskip=INT`. Once no more merging is found for that hit, the next longest hit will
+be considered. If any hits are merged during this process, it will be repeated until convergence is reached.
+
+During merging, `Length` and `Identity` statistics will be summed, and additional statistics will be added:
+
+* `Non` = The unaligned bases in the query between the GABLAM local hits.
+* `Alt` = The number of bases (`Length`) of hits to different hit scaffolds
+* `Trans` = The number of bases (`Length`) of hits to the same scaffold but outside the merged hits.
+* `Inv` = The number of bases (`Length`) of intermediate hits that are in the right place but inverted strand.
+* `Dup` = The number of overlapping bases in the query scaffolds between adjacent hits.
+
+NOTE: This will be done for both genomes. For Genome 2, the "hits" are the `Qry` scaffolds, and all assessments
+of collinearity will be performed on the `Hit` scaffolds.
+
+Next, SynBad will assess inversions and apparent translocations for flanking collinear hits and instigate a
+number of updated ratings or suggested fixes. The following new SynBad gap ratings may be added:
+
+* `Div` = `Divergence` = Translocation or Breakpoint gap with flanking collinear hits.
+* `InvBrk` = `Inversion Breakpoint` = Reclassified Inversion that appears to be out of place.
+* `InvFix` = `Fixed Inversion` = Inversion that becomes collinear when inverted. (See `*.corrections.tdt`)
+* `InvDupFix` = `Fixed Inversion Duplication` = Inversion that becomes a Duplication when inverted. (See `*.corrections.tdt`)
+* `Long` = `Long Syntenic` = Gap flanked by collinear Qry/Hit pairs but distance is greater than `maxsynspan=INT`  (default 25 kb).
+
 If `fragment=T`, the assemblies will then be fragmented on gaps that are not Syntenic, unless more than
 `minreadspan=INT` reads span the gap.
 
-A future release of Synbad will optionally re-arrange the two assemblies, incorporating gapfill assemblies
-where possible.
+A future release of Synbad will optionally re-arrange the two assemblies, incorporating gapass assemblies
+where possible. [GapSpanner](https://github.com/slimsuite/gapspanner) can also be used to gap-fill spanned gaps
+prior to running SynBad.
 
 ## Dependencies
 
-SynBad needs Minimap2 installed. For `gapass` and `gapfill` gap modes, Flye also needs to be installed. To generate
+SynBad needs Minimap2 installed. For `gapass` gap mode, Flye also needs to be installed. To generate
 documentation with `dochtml`, R will need to be installed and a pandoc environment variable must be set, e.g.
 
     export RSTUDIO_PANDOC=/Applications/RStudio.app/Contents/MacOS/pandoc
@@ -89,28 +122,35 @@ genome1=FILE    : Genome assembly used as the query in the GABLAM searches []
 genome2=FILE    : Genome assembly used as the searchdb in the GABLAM searches []
 basefile=X      : Prefix for output files [synbad]
 gablam=X        : Optional prefix for GABLAM search [defaults to basefile=X]
-gapmode=X       : Diploidocus gap run mode (gapspan/gapass/gapfill) [gapfill]
+gapmode=X       : Diploidocus gap run mode (gapspan/gapass) [gapspan]
 minloclen=INT   : Minimum length for aligned chunk to be kept (local hit length in bp) [1000]
 minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
-maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [1]
-maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [10000]
+maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [4]
+maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [25000]
+synreadspan=INT : Minimum number of reads spanning a gap to change the rating to "Spanned" [5]
+spannedflank=INT: Required flanking distance for synreadspan "Spanned" rating [0]
+maxoverlap=INT  : Maximum overlap (bp) of adjacent local hits to allow compression [500]
 chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
 chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
 ### ~ Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
-fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Breakpoint,Inversion,Translocation]
+fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Brk,Inv,InvBrk,Frag,Tran]
 minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
 ### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 bam1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
 paf1=FILE       : Optional PAF file of long reads mapped onto assembly 1 [$BASEFILE1.paf]
 reads1=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
-readtype1=LIST  : List of ont/pb file types matching reads for minimap2 mapping [ont]
+readtype1=LIST  : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
 bam2=FILE       : Optional BAM file of long reads mapped onto assembly 2 [$BASEFILE2.bam]
 paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
 reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
-readtype2=LIST  : List of ont/pb file types matching reads for minimap2 mapping [ont]
+readtype2=LIST  : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
 ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+bestpair=T/F    : Whether to restrict the paired output to the top scaffold pairs [False]
+update=T/F      : Whether to reload compressed qry and hit tables but re-run additional compression [False]
+force=T/F       : Whether to force regeneration of SynBad results tables [False]
 dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead of main run [False]
+### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 ```
 
 ---

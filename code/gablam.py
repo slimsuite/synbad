@@ -343,6 +343,7 @@ def todo():     ### Major Functionality to Add - only a method for PythonWin col
     # [ ] : Make fullblast=T keepblast=T the default.
     # [ ] : Recommend keepblast=F if fullblast=F (and i>0).
     # [ ] : Add checking of BLAST+ version and formatdb version (v4 or v5).
+    # [ ] : Add mseq2 as a search option for both DNA and protein? (Not sure how to get local alignments.)
     '''
 #########################################################################################################################
 def makeInfo():     ### Makes Info object
@@ -381,6 +382,9 @@ def setupProgram(): ### Basic Setup of Program
     try:
         ### Initial Command Setup & Info ###
         info = makeInfo()
+        if len(sys.argv) == 2 and sys.argv[1] in ['version','-version','--version']: rje.printf(info.version); sys.exit(0)
+        if len(sys.argv) == 2 and sys.argv[1] in ['details','-details','--details']: rje.printf('{0} v{1}'.format(info.program,info.version)); sys.exit(0)
+        if len(sys.argv) == 2 and sys.argv[1] in ['description','-description','--description']: rje.printf('%s: %s' % (info.program,info.description)); sys.exit(0)
         cmd_list = rje.getCmdList(sys.argv[1:],info=info)      ### Load defaults from program.ini
         ### Out object ###
         out = rje.Out(cmd_list=cmd_list)

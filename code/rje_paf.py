@@ -493,9 +493,11 @@ class PAF(rje_obj.RJE_Object):
                 pafin = self.getStr('PAFIn')
             if not rje.exists(pafin): raise IOError('PAFIn file "%s" not found!' % pafin)
             self.setStr({'PAFIn':pafin})
+            tmpshush = pafin.endswith('.tmp') and not self.debugging()
             #self.printLog('#~~#','## ~~~~~ Parsing PAF Alignments ~~~~~ ##')
-            self.headLog('Parsing PAF Alignments')
-            self.printLog('\r#PAF','Parsing %s' % pafin)
+            if not tmpshush:
+                self.headLog('Parsing PAF Alignments')
+                self.printLog('\r#PAF','Parsing %s' % pafin)
 
             ### ~ [2] Load PAF file with auto-counter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             lfiltx = 0; ifiltx = 0
@@ -506,7 +508,7 @@ class PAF(rje_obj.RJE_Object):
             px = 0
             with open(pafin,'r') as PAF:
                 for line in PAF:
-                    self.progLog('\r#PAF','Parsing %s lines' % (rje.iStr(px)))
+                    if not tmpshush: self.progLog('\r#PAF','Parsing %s lines' % (rje.iStr(px)))
                     px += 1
                     data = string.split(rje.chomp(line),'\t')
                     #i# Added for checkpos
@@ -547,11 +549,11 @@ class PAF(rje_obj.RJE_Object):
                         self.deBug('Length=%s; Identity=%s; nn=%s; :%s; Alnlen=%s' % (pentry['Length'],pentry['Identity'],nn,cstats[':'],cstats['AlnLen']))
 
 
-
-            self.printLog('\r#PAF','Parsed %s lines from %s' % (rje.iStr(px),pafin))
-            #if not pafdb.entryNum(): self.warnLog('No hits parsed from %s: check minimap2=PROG setting' % pafin)
-            if lfiltx: self.printLog('#FILT','%s PAF lines filtered with (Length+nn) < minloclen=%d' % (rje.iStr(lfiltx),minloclen))
-            if ifiltx: self.printLog('#FILT','%s PAF lines filtered with (Identity+nn)/(Length+nn) < minlocid=%.2f%%' % (rje.iStr(ifiltx),minlocid*100.0))
+            if not tmpshush:
+                self.printLog('\r#PAF','Parsed %s lines from %s' % (rje.iStr(px),pafin))
+                #if not pafdb.entryNum(): self.warnLog('No hits parsed from %s: check minimap2=PROG setting' % pafin)
+                if lfiltx: self.printLog('#FILT','%s PAF lines filtered with (Length+nn) < minloclen=%d' % (rje.iStr(lfiltx),minloclen))
+                if ifiltx: self.printLog('#FILT','%s PAF lines filtered with (Identity+nn)/(Length+nn) < minlocid=%.2f%%' % (rje.iStr(ifiltx),minlocid*100.0))
 
             ### ~ [3] Return PAF Data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             if self.dev(): pafdb.saveToFile()

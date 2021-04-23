@@ -1,7 +1,7 @@
 # SynBad: Synteny-based scaffolding assessment and adjustment
 
 ```
-SynBad v0.7.0
+SynBad v0.8.0
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.
@@ -42,10 +42,10 @@ Gaps will then be classified according to the associated `GapSpan` and `SynSpan`
 * `Brk` = `Breakpoint` = Difference between positive `SynSpan` and `GapSpan` is bigger than the `maxsynspan=INT` distance.
 * `Dup` = `Duplication` = Overlapping flanking hits on the same strand.
 * `Inv` = `Inversion` = Flanking hits are on alternative strands.
-* `Tran` = `Translocation` = `SynSpan` indicates matches are on different contigs.
-* `Frag` = `Fragmentation` = `SynSpan` indicates matches are on different contigs, 1+ of which is not a chromosome scaffold.
+* `Tran` = `Translocation` = `SynSpan` indicates matches are on different scaffolds.
+* `Frag` = `Fragmentation` = `SynSpan` indicates matches are on different scaffolds, 1+ of which is not a chromosome scaffold.
 * `Term` = `Terminal` = Gap is between a local alignment and the end of the query sequence.
-* `Span` = `Spanned` = Any gaps with Aligned or Syntenic rating that are spanned by at least `synreadspan=INT` reads.
+* `Span` = `Spanned` = Any gaps without Aligned or Syntenic rating that are spanned by at least `synreadspan=INT` reads.
 * `Null` = No mapping between genomes for that gap.
 
 If `chr1=X` and/or `chr2=X` chromosome scaffold prefixes are provided then `Translocation` will be restricted to
@@ -107,7 +107,7 @@ For full documentation of the SynBad workflow, run with `dochtml=T` and read the
 genome1=FILE    : Genome assembly used as the query in the GABLAM searches []
 genome2=FILE    : Genome assembly used as the searchdb in the GABLAM searches []
 basefile=X      : Prefix for output files [synbad]
-gablam=X        : Optional prefix for GABLAM search [defaults to basefile=X]
+gablam=X        : Optional prefix for GABLAM search [defaults to $BASEFILE.map]
 gapmode=X       : Diploidocus gap run mode (gapspan/gapass) [gapspan]
 minloclen=INT   : Minimum length for aligned chunk to be kept (local hit length in bp) [1000]
 minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (local %identity) [50]
@@ -131,7 +131,21 @@ bam2=FILE       : Optional BAM file of long reads mapped onto assembly 2 [$BASEF
 paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
 reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
 readtype2=LIST  : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
+mapflanks1=FILE : Flanks fasta file from previous SynBad run for mapping genome 1 flank identifiers []
+mapflanks2=FILE : Flanks fasta file from previous SynBad run for mapping genome 2 flank identifiers []
+fullmap=T/F     : Whether to abort if not all flanks can be mapped [True]
+### ~ HiC Gap Flank options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+hicbam1=FILE    : Optional BAM file of HiC reads mapped onto assembly 1 [$BASEFILE1.HiC.bam]
+hicbam2=FILE    : Optional BAM file of HiC reads mapped onto assembly 2 [$BASEFILE2.HiC.bam]
+gapflanks=INT   : Size of gap flank regions to output for HiC pairing analysis (0=off) [10000]
+pureflanks=T/F  : Whether to restrict gap flanks to pure contig sequence (True) or include good gaps (False) [True]
+hicscore=X      : HiC scoring mode (score/wtscore) [wtscore]
+hicmode=X       : Pairwise HiC assessment scoring strategy (synbad/pure/rand/full) [synbad]
+hicdir1=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.qryflanks/]
+hicdir2=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.hitflanks/]
 ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+newacc1=X       : Scaffold name prefix for updated Genome 1 output [None]
+newacc2=X       : Scaffold name prefix for updated Genome 2 output [None]
 bestpair=T/F    : Whether to restrict the paired output to the top scaffold pairs [False]
 update=T/F      : Whether to reload compressed qry and hit tables but re-run additional compression [False]
 force=T/F       : Whether to force regeneration of SynBad results tables [False]
@@ -140,6 +154,12 @@ dochtml=T/F     : Generate HTML Diploidocus documentation (*.docs.html) instead 
 ```
 
 ---
+
+## SynBad workflow
+
+_Details of the SynBad workflow will be added in a future release._
+
+**NOTE:** SynBad is still under development. Features and details will continue to be updated.
 
 
 

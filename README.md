@@ -1,7 +1,7 @@
 # SynBad: Synteny-based scaffolding assessment and adjustment
 
 ```
-SynBad v0.8.0
+SynBad v0.8.1
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.
@@ -139,8 +139,9 @@ hicbam1=FILE    : Optional BAM file of HiC reads mapped onto assembly 1 [$BASEFI
 hicbam2=FILE    : Optional BAM file of HiC reads mapped onto assembly 2 [$BASEFILE2.HiC.bam]
 gapflanks=INT   : Size of gap flank regions to output for HiC pairing analysis (0=off) [10000]
 pureflanks=T/F  : Whether to restrict gap flanks to pure contig sequence (True) or include good gaps (False) [True]
-hicscore=X      : HiC scoring mode (score/wtscore) [wtscore]
+hicscore=X      : HiC scoring mode (pairs/score/wtscore) [wtscore]
 hicmode=X       : Pairwise HiC assessment scoring strategy (synbad/pure/rand/full) [synbad]
+hicmin=X        : Min. number of HiC read pairs for a "best" HiC pairing ruling [3]
 hicdir1=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.qryflanks/]
 hicdir2=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.hitflanks/]
 ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###

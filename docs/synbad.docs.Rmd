@@ -1,7 +1,7 @@
 ---
-title: "SynBad V0.8.0 Documentation"
+title: "SynBad V0.8.1 Documentation"
 author: "Richard J. Edwards"
-date: "2021-04-23"
+date: "2021-04-28"
 output:
   html_document:
     css: http://www.slimsuite.unsw.edu.au/stylesheets/slimhtml.css
@@ -153,8 +153,9 @@ hicbam1=FILE    : Optional BAM file of HiC reads mapped onto assembly 1 [$BASEFI
 hicbam2=FILE    : Optional BAM file of HiC reads mapped onto assembly 2 [$BASEFILE2.HiC.bam]
 gapflanks=INT   : Size of gap flank regions to output for HiC pairing analysis (0=off) [10000]
 pureflanks=T/F  : Whether to restrict gap flanks to pure contig sequence (True) or include good gaps (False) [True]
-hicscore=X      : HiC scoring mode (score/wtscore) [wtscore]
+hicscore=X      : HiC scoring mode (pairs/score/wtscore) [wtscore]
 hicmode=X       : Pairwise HiC assessment scoring strategy (synbad/pure/rand/full) [synbad]
+hicmin=X        : Min. number of HiC read pairs for a "best" HiC pairing ruling [3]
 hicdir1=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.qryflanks/]
 hicdir2=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.hitflanks/]
 ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###

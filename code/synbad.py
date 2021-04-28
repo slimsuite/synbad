@@ -19,8 +19,8 @@
 """
 Module:       synbad
 Description:  Synteny-based scaffolding assessment and adjustment
-Version:      0.8.0
-Last Edit:    18/04/21
+Version:      0.8.1
+Last Edit:    27/04/21
 GitHub:       https://github.com/slimsuite/synbad
 Copyright (C) 2020  Richard J. Edwards - See source code for GNU License Notice
 
@@ -115,7 +115,8 @@ Commandline:
     hicbam2=FILE    : Optional BAM file of HiC reads mapped onto assembly 2 [$BASEFILE2.HiC.bam]
     gapflanks=INT   : Size of gap flank regions to output for HiC pairing analysis (0=off) [10000]
     pureflanks=T/F  : Whether to restrict gap flanks to pure contig sequence (True) or include good gaps (False) [True]
-    hicscore=X      : HiC scoring mode (score/wtscore) [wtscore]
+    hicscore=X      : HiC scoring mode (pairs/score/wtscore) [wtscore]
+    hicmin=X        : Min. number of HiC read pairs for a "best" HiC pairing ruling [3]
     hicmode=X       : Pairwise HiC assessment scoring strategy (synbad/pure/rand/full) [synbad]
     hicdir1=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.qryflanks/]
     hicdir2=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.hitflanks/]
@@ -156,6 +157,7 @@ def history():  ### Program History - only a method for PythonWin collapsing! ##
     # 0.6.1 - Tidy up of code and transition of reworked code to main run (no longer dev=T only).
     # 0.7.0 - Added code for fixing Inversions and well-supported translocations. Updated defaults.
     # 0.8.0 - Added hicbam=FILE inputs and initial HiC assessment. Fixed inversion bug.
+    # 0.8.1 - Adding hicbest and summary table output. Fixed some calculation and re-run bugs.
     '''
 #########################################################################################################################
 def todo():     ### Major Functionality to Add - only a method for PythonWin collapsing! ###
@@ -184,12 +186,14 @@ def todo():     ### Major Functionality to Add - only a method for PythonWin col
     # [ ] : Add final output where Qry and Hit are replaced for Genome1/2 output.
     # [ ] : Rationalise the final output to the really useful stuff.
     # [?] : Add minimum HiC read count and/or HiC score filter?
-    # [ ] : Add hicbest table with the top pairs and mark as single or reciprocal.
+    # [Y] : Add hicbest table with the top pairs and mark as single or reciprocal.
+    # [ ] : Separate the flank/contig generation from the HiC processing.
+    # [ ] : Add HiCNone to summary table.
     '''
 #########################################################################################################################
 def makeInfo(): ### Makes Info object which stores program details, mainly for initial print to screen.
     '''Makes Info object which stores program details, mainly for initial print to screen.'''
-    (program, version, last_edit, copy_right) = ('SynBad', '0.8.0', 'April 2021', '2020')
+    (program, version, last_edit, copy_right) = ('SynBad', '0.8.1', 'April 2021', '2020')
     description = 'Synteny-based scaffolding assessment and adjustment'
     author = 'Dr Richard J. Edwards.'
     comments = ['This program is still in development and has not been published.',rje_obj.zen()]
@@ -260,6 +264,7 @@ gapdesc = {'Aln':'`Aligned` = Gap is found in the middle of a local alignment to
 #########################################################################################################################
 #i# Setup lists of gap types for use in different situations
 #i# For now, InvFix are not in goodgaps to avoid nested inversions etc. Recommend re-running on fixed fasta.
+puregaps = ['Syn', 'Aln', 'Span', 'Long','HiC','DupHiC']
 goodgaps = ['Syn', 'Aln', 'Span', 'Div', 'Ins', 'Long','HiC','DupHiC']
 skipgaps = ['Syn', 'Aln', 'Span', 'Long', 'Div', 'Dup', 'Ins','DupHiC','HiC']  #X# 'InvFix', 'InvDupFix',
 fraggaps = ['Brk', 'Inv', 'InvBrk', 'Frag', 'Tran']
@@ -304,7 +309,7 @@ class SynBad(rje_obj.RJE_Object):
     - HiCBAM2=FILE    : Optional BAM file of HiC reads mapped onto assembly 1 [$BASEFILE1.HiC.bam]
     - MapFlanks1=FILE : Flanks fasta file from previous SynBad run for mapping genome 1 flank identifiers []
     - MapFlanks2=FILE : Flanks fasta file from previous SynBad run for mapping genome 2 flank identifiers []
-    - HiCScore=X      : HiC scoring mode (score/wtscore) [wtscore]
+    - HiCScore=X      : HiC scoring mode (pairs/score/wtscore) [wtscore]
     - HiCMode=X       : Pairwise HiC assessment scoring strategy (synbad/pure/rand/full) [synbad]
     - HiCDir1=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.qryflanks/]
     - HiCDir2=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.hitflanks/]
@@ -323,6 +328,7 @@ class SynBad(rje_obj.RJE_Object):
 
     Int:integer
     - GapFlanks=INT   : Size of gap flank regions to output for HiC pairing analysis (0=off) [10000]
+    - HiCMin=X        : Min. number of HiC read pairs for a "best" HiC pairing ruling [3]
     - MaxOverlap=INT  : Maximum overlap (bp) of adjacent local hits to allow compression [500]
     - MaxSynSkip=INT  : Maximum number of local alignments to skip for SynTrans classification [4]
     - MaxSynSpan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [25000]
@@ -347,6 +353,7 @@ class SynBad(rje_obj.RJE_Object):
 
     Dict:dictionary
     - FlankMap = {qry:{GapFlank:OldFlank},hit:{GapFlank:OldFlank}}
+    - HiCOffProb = {qh:BadHiCProb}
 
     Obj:RJE_Objects
     - DB = Database object
@@ -362,17 +369,17 @@ class SynBad(rje_obj.RJE_Object):
         self.strlist = ['BAM1','BAM2','Chr1','Chr2','GABLAM','GapMode','Genome1','Genome2','HiCBAM1','HiCBAM2',
                         'MapFlanks1','MapFlanks2','HiCScore','HiCMode','HiCDir1','HiCDir2','NewAcc1','NewAcc2','PAF1','PAF2']
         self.boollist = ['BestPair','DocHTML','Fragment','FullMap','Update']
-        self.intlist = ['GapFlanks','MaxOverlap','MaxSynSkip','MaxSynSpan','MinLocLen','MinReadSpan','SpannedFlank','SynReadSpan']
+        self.intlist = ['GapFlanks','HiCMin','MaxOverlap','MaxSynSkip','MaxSynSpan','MinLocLen','MinReadSpan','SpannedFlank','SynReadSpan']
         self.numlist = ['MinLocID']
         self.filelist = []
         self.listlist = ['FragTypes','Reads1','Reads2','ReadType1','ReadType2','qry','hit']
-        self.dictlist = ['FlankMap']
+        self.dictlist = ['FlankMap','HiCOffProb']
         self.objlist = []
         ### ~ Defaults ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
         self._setDefaults(str='None',bool=False,int=0,num=0.0,obj=None,setlist=True,setdict=True,setfile=True)
         self.setStr({'GapMode':'gapspan','HiCScore':'wtscore','HiCMode':'synbad'})
         self.setBool({'BestPair':False,'Fragment':False,'PureFlanks':True,'FullMap':True,'Update':False})
-        self.setInt({'GapFlanks':10000,'MaxOverlap':500,'MaxSynSkip':4,'MaxSynSpan':25000,'MinLocLen':1000,'MinReadSpan':1,'SpannedFlank':0,'SynReadSpan':5})
+        self.setInt({'GapFlanks':10000,'HiCMin':3,'MaxOverlap':500,'MaxSynSkip':4,'MaxSynSpan':25000,'MinLocLen':1000,'MinReadSpan':1,'SpannedFlank':0,'SynReadSpan':5})
         self.setNum({'MinLocID':50.0})
         ### ~ Other Attributes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
         self.list['FragTypes'] = fraggaps
@@ -395,7 +402,7 @@ class SynBad(rje_obj.RJE_Object):
                 self._cmdReadList(cmd,'file',['BAM1','BAM2','Genome1','Genome2','HiCBAM1','HiCBAM2','MapFlanks1','MapFlanks2','PAF1','PAF2'])  # String representing file path
                 #self._cmdReadList(cmd,'date',['Att'])  # String representing date YYYY-MM-DD
                 self._cmdReadList(cmd,'bool',['BestPair','DocHTML','Fragment','FullMap','PureFlanks','Update'])  # True/False Booleans
-                self._cmdReadList(cmd,'int',['GapFlanks','MaxOverlap','MaxSynSkip','MaxSynSpan','MinLocLen','MinReadSpan','SpannedFlank','SynReadSpan'])   # Integers
+                self._cmdReadList(cmd,'int',['GapFlanks','HiCMin','MaxOverlap','MaxSynSkip','MaxSynSpan','MinLocLen','MinReadSpan','SpannedFlank','SynReadSpan'])   # Integers
                 self._cmdReadList(cmd,'perc',['MinLocID']) # Percentage
                 #self._cmdReadList(cmd,'min',['Att'])   # Integer value part of min,max command
                 #self._cmdReadList(cmd,'max',['Att'])   # Integer value part of min,max command
@@ -542,8 +549,9 @@ class SynBad(rje_obj.RJE_Object):
         hicbam2=FILE    : Optional BAM file of HiC reads mapped onto assembly 2 [$BASEFILE2.HiC.bam]
         gapflanks=INT   : Size of gap flank regions to output for HiC pairing analysis (0=off) [10000]
         pureflanks=T/F  : Whether to restrict gap flanks to pure contig sequence (True) or include good gaps (False) [True]
-        hicscore=X      : HiC scoring mode (score/wtscore) [wtscore]
+        hicscore=X      : HiC scoring mode (pairs/score/wtscore) [wtscore]
         hicmode=X       : Pairwise HiC assessment scoring strategy (synbad/pure/rand/full) [synbad]
+        hicmin=X        : Min. number of HiC read pairs for a "best" HiC pairing ruling [3]
         hicdir1=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.qryflanks/]
         hicdir2=PATH    : Path to HiC read ID lists for genome 1 [$BASEFILE.hitflanks/]
         ### ~ Additional output options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
@@ -706,7 +714,23 @@ class SynBad(rje_obj.RJE_Object):
             if not self.synBadHiCMap(): return False
             self.headLog('ASSEMBLY MAPS',line='=')
             for qh in ['qry','hit']:
-                #!# Add checking and reloading from OLDmakeAssemplyMap()
+                wanted = ['map.fasta','map.txt']
+                qhbase = '{0}.{1}.'.format(self.baseFile(),qh)
+                ### ~ [1] Check/Load Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+                if not self.force() and rje.checkForFiles(wanted,basename=qhbase,log=self.log,cutshort=False,ioerror=False,missingtext='Not found.'):
+                    self.printLog('#MAP','{0} assembly map found: loading (force=F)'.format(qh))
+                    maptxt = qhbase + 'map.txt'
+                    self.list[qh] = []
+                    try:
+                        for line in open(maptxt,'r').readlines():
+                            #self.bugPrint(line)
+                            data = string.split(line)
+                            if not data: continue
+                            if data[1] == '=': self.list[qh] += data[2:]
+                        continue
+                    except:
+                        self.errorLog('Problem processing {0}map.txt: will regenerate'.format(qhbase))
+                        self.list[qh] = []
                 if not self.makeAssemplyMap(qh): return False
                 if not self.saveAssemblyMaps(qh,mapname='map'): return False
 
@@ -1462,6 +1486,8 @@ class SynBad(rje_obj.RJE_Object):
             for qh in ('Qry','Hit'):
                 locdb = self.db(qh.lower())
                 gapdb = self.dbTable(qh,'gap')
+                hicdb = self.dbTable(qh,'hicpairs',expect=False)
+                if not hicdb or not hicdb.entryNum(): continue
                 hx = 0; dx = 0; px = 0
                 self.headLog('SynBad {0} HiC pair assessment'.format(qh),line='~')
                 #!# Should there be a toggle to allow reclassification of partial HiC support? Would this indicate a duplication problem?!
@@ -1496,6 +1522,7 @@ class SynBad(rje_obj.RJE_Object):
             for qh in ('Qry','Hit'):
                 self.updateHitGHaps(qh)
 
+            ### ~ [5] Generate Synteny blocks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             #># Generate a new fragments table that skips through Syn, Aln, Span, InvFix, InvDupFix, Long and Div gaps. Sort by size?
             # and look for out of place neighbours. Build a collinear backbone in size order? Base this on the ends.
             # Identity all that don't fit. Sub classify as cis and trans. Look at whether cis can be moved into any gaps.
@@ -1506,6 +1533,12 @@ class SynBad(rje_obj.RJE_Object):
             for qh in ('Qry','Hit'):
                 self.headLog('SynBad {0} synteny blocks and cis/trans assignment'.format(qh),line='~')
                 self.synBadSyntenyBlocks(qh)
+
+            ### ~ [5] HiC "best" translocations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            #i# Updates based on best HiC support (BestFlank matching GapFlank)
+            for qh in ('Qry','Hit'):
+                self.synBadHiCBestTranslocations(qh)
+
 
 
             ### ~ [!] Duplications ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
@@ -1555,6 +1588,97 @@ class SynBad(rje_obj.RJE_Object):
             #!# themselves?) Then run rje_lrbridge.regionSpan(self,regfile). If no edits made, can just use the BAM
             #!# file already made of mapped reads. Otherwise, will need to re-map read data to corrected output.
             #!# -> Use the assembly map to identify the regions?
+
+            return True
+        except: self.errorLog('%s.tidyTables error' % self.prog()); return False
+#########################################################################################################################
+    def synBadHiCBestTranslocations(self,qh): ### Updates based on best HiC support (BestFlank matching GapFlank)
+        '''
+        Updates based on best HiC support (BestFlank matching GapFlank)
+        # 1. Generate a list of non-pure gaps as (flank1,flank2) (sort)
+        # 2. Generate a list of all flanks of bad gaps.
+        # 3. Generate a list of pairs of flanks at the end of blocks -> assess via list [2] for misplaced blocks.
+        # 4. Generate a list of "best" pairs for each misplaced block = (up,down) (sort)
+        # 5. Generate a list of actual pairs for each misplaced block = (up,down) (sort)
+        # 6. Cross-reference list [5] with hicbest pairs -> "extract" and close gap if found
+        # 7. Cross-reference list [4] with list [1] -> "relocate" if a block goes somewhere else (NOTE: Could be an extracted block)
+        # 8. Add actual pairs of relocated block to list [1]. (Should have already been caught by [6] if a best pair.)
+        # 9. Cycle until no more extract/relocate corrections made.
+        #10. Identify and report pairs of bad gaps that share hicbest flanks? (Could add as swap corrections and have toggle to execute?)
+        >> qh:str = Qry or Hit
+        << True/False
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            self.headLog('Assessing SynBad {0} HiC translocations'.format(qh),line='~')
+            locdb = self.db(qh.lower())
+            gapdb = self.dbTable(qh,'gap')
+            bdb = self.dbTable(qh,'blocks')
+            hicdb = self.dbTable(qh,'hicbest',expect=False)
+            if not hicdb or not hicdb.entryNum():
+                self.printLog('#HIC','No HiC best pairs data: no HiC translocations')
+                return False
+            #i# Behaviour will depend on gap types
+            # goodgaps # Avoid translocations
+            # puregaps # Avoid any disruption
+
+            ### ~ [1] Process ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            #i# Updates based on best HiC support (BestFlank matching GapFlank)
+            # 1. Generate a list of non-pure gaps as (flank1,flank2) (sort)
+            # 2. Generate a list of all flanks of bad gaps.
+            badgaps = []
+            badflanks = []
+            for entry in gapdb.entries():
+                if entry['SynBad'] in puregaps:
+                    flanks = [entry['GapFlank5'],entry['GapFlank3']]
+                    flanks.sort()
+                    badgaps.append(flanks)
+                    badflanks += flanks
+            # 3. Generate a list of pairs of flanks at the end of blocks -> assess via list [2] for misplaced blocks.
+            ctgdb = self.dbTable(qh,'contigs')
+            prev = None
+            for contig in ctgdb.entries(sorted=True):
+                seqname = contig['seqname']
+                if not prev or prev['seqname'] != seqname:
+                    if prev: badflanks.append(prev['flank3'])
+                    badflanks.append(contig['flank5'])
+                prev = contig
+            if prev: badflanks.append(prev['flank3'])
+            badblocks = []
+            for entry in bdb.entries():
+                if entry['Flank5'] in badflanks and entry['Flank3'] in badflanks:
+                    badblocks.append(entry)
+            # 4. Generate a list of "best" pairs for each misplaced block = (up,down) (sort)
+            besthic = self.bestHiCPairDict(qh)
+            blockbest = []
+            for block in badblocks:
+                flanks = []
+                if block['Flank5'] in besthic: flanks.append(besthic[block['Flank5']])
+                else: flanks.append('NA')
+                if block['Flank3'] in besthic: flanks.append(besthic[block['Flank5']])
+                else: flanks.append('NA')
+                flanks.sort()
+                blockbest.append(flanks)
+            # 5. Generate a list of actual pairs for each misplaced block = (up,down) (sort)
+            gapdb.index('GapFlank5')
+            gapdb.index('GapFlank3')
+            blockflanks = []
+            for block in badblocks:
+                flanks = []
+                region1 = block['Flank5']
+                if region1 in gapdb.index('GapFlank5'):
+                    flanks.append(gapdb.indexEntries('GapFlank5',region1)[0]['GapFlank3'])
+                elif region1 in gapdb.index('GapFlank3'):
+                    flanks.append(gapdb.indexEntries('GapFlank3',region1)[0]['GapFlank5'])
+                else: flanks.append('NA')
+                flanks.sort()
+                blockflanks.append(flanks)
+            # 6. Cross-reference list [5] with hicbest pairs -> "extract" and close gap if found
+            # 7. Cross-reference list [4] with list [1] -> "relocate" if a block goes somewhere else (NOTE: Could be an extracted block)
+            # 8. Add actual pairs of relocated block to list [1]. (Should have already been caught by [6] if a best pair.)
+            # 9. Cycle until no more extract/relocate corrections made.
+            #10. Identify and report pairs of bad gaps that share hicbest flanks? (Could add as swap corrections and have toggle to execute?)
+
+
 
             return True
         except: self.errorLog('%s.tidyTables error' % self.prog()); return False
@@ -1723,6 +1847,36 @@ class SynBad(rje_obj.RJE_Object):
                     else: block['SynType'] = 'Cis'
             #syndb.dropField(qgap)
             syndb.indexReport('SynType')
+
+            ### ~ [2] Add flanks to Blocks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            syndb.addField('Flank5')
+            syndb.addField('Flank3')
+            ctgdb = self.dbTable(qh,'contigs')
+            termflanks = {}
+            for contig in ctgdb.entries(sorted=True):
+                seqname = contig['seqname']
+                if seqname not in termflanks:
+                    termflanks[seqname] = [contig['flank5'],contig['flank3']]
+                else:
+                    termflanks[seqname][1] = contig['flank3']
+            entries = syndb.entries(sorted=True)
+            prev = None
+            while entries:
+                entry = entries.pop(0)
+                #i# New sequence
+                if not prev or entry[qh] != prev[qh]:
+                    if prev: prev['Flank3'] = termflanks[prev[qh]][1]
+                    entry['Flank5'] = termflanks[entry[qh]][0]
+                elif entry['SynType'] == 'Gap':
+                    gap = gapdb.data(syndb.makeKey(entry))
+                    prev['Flank3'] = gap['GapFlank5']
+                    entry['Flank5'] = gap['GapFlank5']
+                    entry['Flank3'] = gap['GapFlank3']
+                else:
+                    entry['Flank5'] = prev['Flank3']
+                prev = entry
+            if prev: prev['Flank3'] = termflanks[prev[qh]][1]
+
             syndb.saveToFile()
 
             return True
@@ -2273,6 +2427,7 @@ class SynBad(rje_obj.RJE_Object):
                 except:
                     pass    # Will need to update pairs tables!
                 locdb.saveToFile(savefields=outfields,backup=backup)
+                #X# This is now done earlier: check this OK - self.bestHiCPairTable(qh)
 
             ### ~ [2] Paired scaffold output ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             db = self.db()
@@ -2311,28 +2466,48 @@ class SynBad(rje_obj.RJE_Object):
         Summarises ratings etc.
         '''
         try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            sdb = self.db().addEmptyTable('summary',['File','SeqNum','CtgNum','Good','Fix','Dupl','Bad','HiCBest','HiCPart','HiCScore']+rje.sortKeys(gapdesc),['File'],log=True)
+            seqobj = {}
+            seqobj['qry'] = self.obj['SeqList1']
+            seqobj['hit'] = self.obj['SeqList2']
             #i# Add a summary of each class with descriptions and [Good/Fix/Dup/Bad] followed by percentage classes
             base = {'qry':rje.baseFile(self.getStr('Genome1'), strip_path=True),
                     'hit':rje.baseFile(self.getStr('Genome2'), strip_path=True)}
             ### ~ [1] Summary reports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-            gapx = {'Total':0,'Good':0,'Fix':0,'Dup':0,'Bad':0}
+            gapx = {'Total':0,'Good':0,'Fix':0,'Dupl':0,'Bad':0}
             for qh in ['qry','hit']:
+                #!# Add stats to a summary table and output: File SeqNum CtgNum Good Fix Dup Bad <SynBad Types>
+                sentry = {'File':seqobj[qh].name(),'SeqNum':seqobj[qh].seqNum(),'CtgNum':self.dbTable(qh,'contigs').entryNum()}
+                for field in sdb.fields()[3:]: sentry[field] = 0
                 self.headLog('SYNBAD {0} {1}'.format(qh,base[qh]),line='-')
                 gapdb = self.dbTable(qh,'gap')
                 for gtype in gapdb.indexKeys('SynBad'):
+                    gx = len(gapdb.index('SynBad')[gtype])
                     if gtype not in gapdesc: gapdesc[gtype] = 'See docs for details'
+                    else: sentry[gtype] += gx
                     gclass = 'Bad'
                     if gtype in goodgaps: gclass = 'Good'
                     elif 'Fix' in gtype: gclass = 'Fix'
-                    elif 'Dup' in gtype: gclass = 'Dup'
-                    gx = len(gapdb.index('SynBad')[gtype])
+                    elif 'Dup' in gtype: gclass = 'Dupl'
                     self.printLog('#SYNBAD','{0} {1} ({2}): {3} [{4}]'.format(gx,gtype,qh,gapdesc[gtype],gclass))
                     gapx['Total'] += gx
                     gapx[gclass] += gx
-
-                for gclass in ['Good','Fix','Dup','Bad']:
+                    sentry[gclass] += gx
+                for gclass in ['Good','Fix','Dupl','Bad']:
                     self.printLog('#SYNBAD','{0:.1f}% {1} gaps in {2} SynBad class'.format(100.0*gapx[gclass]/gapx['Total'],base[qh],gclass))
+                #i# Report numbers of reciprocal and partial best HiC pairs and sum HiCScore
+                #!# Add Weak and None?
+                hdb = self.dbTable(qh,'hicbest',expect=False)
+                #!# This needs to ignore the Check entries #!# (Report separately?)
+                if hdb:
+                    hdb.index('best')
+                    if 'region1' in hdb.index('best'): sentry['HiCPart'] += len(hdb.index('best')['region1'])
+                    if 'region2' in hdb.index('best'): sentry['HiCPart'] += len(hdb.index('best')['region2'])
+                    if 'both' in hdb.index('best'): sentry['HiCBest'] += len(hdb.index('best')['both'])
+                    sentry['HiCScore'] = sum(hdb.orderedDataList(self.getStr('HiCScore'),empties=False))
+                sdb.addEntry(sentry)
 
+            sdb.saveToFile()
             return True
         except:
             self.errorLog('%s.synBadSummarise error' % self.prog())
@@ -2889,8 +3064,10 @@ class SynBad(rje_obj.RJE_Object):
                             if rje.exists(regtmp): os.unlink(regtmp)
 
             ### ~ [3] Calculate pair overlaps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+                #X#self.dict['HiCOffProb'][qh] = self.calculateHiCOffProb(qh)
                 for field in ['HiCScore','BestFlank5','BestFlank3']: gdb.addField(field)
                 hicscore = self.getStr('HiCScore')
+                bscore = self.getStr('HiCScore') #'pairs'
                 gx = 0.0; gtot = gdb.entryNum()
                 for entry in gdb.entries():
                     self.progLog('\r#HICBAM','Calculating {0} BAM flank ID pair overlaps: {1:.2f}%'.format(qh,gx/gtot)); gx += 100.0
@@ -2902,10 +3079,10 @@ class SynBad(rje_obj.RJE_Object):
                         entry['BestFlank5'] = '?'
                         entry['BestFlank3'] = '?'
                         continue
-                    elif entry['HiCScore'] >= 0.5:
-                        entry['BestFlank3'] = entry['GapFlank3']
-                        entry['BestFlank5'] = entry['GapFlank5']
-                        flankcheck = []
+                    # elif entry['HiCScore'] >= 0.5:
+                    #     entry['BestFlank3'] = entry['GapFlank3']
+                    #     entry['BestFlank5'] = entry['GapFlank5']
+                    #     flankcheck = []
                     elif entry['SynBad'] in ['Syn', 'Aln', 'Long', 'InvFix', 'Dup', 'InvDupFix'] and self.getStrLC('HiCMode') != 'full':
                         #i# For the same-sequence gaps, just compare to others in same sequence
                         #i# Note that the reciprocal search should still identify a better match for out of place contigs
@@ -2913,23 +3090,23 @@ class SynBad(rje_obj.RJE_Object):
                     else:
                         flankcheck = bed.entries()
                     #i# 5' Join
-                    bestscore = entry['HiCScore']
+                    bestscore = pentry[bscore] #X# entry['HiCScore']
                     bestjoin = entry['GapFlank5']
                     for jentry in flankcheck:
                         regions = [entry['GapFlank3'],jentry['name']]
                         pentry = self.hicPair(regions,qh,pdb,'Check')
-                        if pentry and pentry[hicscore] != 'NA' and pentry[hicscore] > bestscore:
-                            bestscore = pentry[hicscore]
+                        if pentry and pentry[hicscore] != 'NA' and pentry[bscore] > bestscore:
+                            bestscore = pentry[bscore]
                             bestjoin = jentry['name']
                     entry['BestFlank5'] = bestjoin
                     #i# 3' Join
-                    bestscore = entry['HiCScore']
+                    bestscore = pentry[bscore] #X#entry['HiCScore']
                     bestjoin = entry['GapFlank3']
                     for jentry in flankcheck:
                         regions = [entry['GapFlank5'],jentry['name']]
                         pentry = self.hicPair(regions,qh,pdb,'Check')
-                        if pentry and pentry[hicscore] != 'NA' and pentry[hicscore] > bestscore:
-                            bestscore = pentry[hicscore]
+                        if pentry and pentry[hicscore] != 'NA' and pentry[bscore] > bestscore:
+                            bestscore = pentry[bscore]
                             bestjoin = jentry['name']
                     entry['BestFlank3'] = bestjoin
                 self.printLog('\r#HICBAM','Calculating {1} {0} BAM flank ID pair overlaps complete'.format(qh,rje.iStr(pdb.entryNum())))
@@ -2967,6 +3144,7 @@ class SynBad(rje_obj.RJE_Object):
                             self.hicPair(regions,qh,pdb,'Rand')
                         randx += 1
                     self.printLog('\r#RANDOM','Generated {1} full BAM flank ID pair overlaps.'.format(qh,rje.iStr(replicates)))
+                    self.setBool({'FullHiC':True})
 
             ### ~ [5] Save data ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             #i# Without HiC data, this will only have partial data
@@ -2980,18 +3158,47 @@ class SynBad(rje_obj.RJE_Object):
                         self.progLog('\r#DROP','Dropping zero-overlaps from {0}...'.format(tname))
                         table.dropEntriesDirect('pairs',[0])
                     if table: table.saveToFile()
+                self.bestHiCPairTable(qh)
             return True
         except:
             self.errorLog('%s.synBadHiCMap error' % self.prog())
             return False
 #########################################################################################################################
-    def hicPair(self,regions,qh,pdb=None,ptype=''):  ### Returns the hicpairs entry for pair of regions.
+    def calculateHiCOffProb(self,qh,pdb=None):  ### Returns the calculated probability of a HiC read not being in best pair
+        '''
+        Returns the hicpairs entry for pair of regions.
+        >> qh:str qry or hit
+        >> pdb:Table hicpairs table (will grab if None)
+        :return: prob
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            #!# Not currently being used.
+            if not pdb: pdb = self.dbTable(qh,'hicpairs')
+            gdb = self.dbTable(qh,'gap')
+            gx = 0.0; gtot = gdb.entryNum()
+            idsum = 0; pairsum = 0
+            for entry in gdb.entries():
+                self.progLog('\r#HICBAM','Calculating Syn/Aln {0} BAM flank ID pair overlaps: {1:.2f}%'.format(qh,gx/gtot)); gx += 100.0
+                if entry['SynBad'] not in ['Syn', 'Aln']: continue
+                regions = [entry['GapFlank5'],entry['GapFlank3']]
+                pentry = self.hicPair(regions,qh,pdb,entry['SynBad'],score=False)
+                idsum += pentry['id1']
+                idsum += pentry['id2']
+                pairsum += 2 * pentry['pairs']
+            self.printLog('\r#HICBAM','Calculation of Syn/Aln {0} BAM flank ID pair overlaps complete.')
+            return float(idsum - pairsum) / float(idsum)
+        except:
+            self.errorLog('%s.calculateHiCOffProb error' % self.prog())
+            raise
+#########################################################################################################################
+    def hicPair(self,regions,qh,pdb=None,ptype='',score=True):  ### Returns the hicpairs entry for pair of regions.
         '''
         Returns the hicpairs entry for pair of regions.
         >> regions:list [flank1,flank2]
         >> qh:str qry or hit
         >> pdb:Table hicpairs table (will grab if None)
         >> ptype:str [''] = Pair type for entry
+        >> score:bool [True] = Whether to calculate scores and add to pdb table
         :return: entry
         '''
         try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
@@ -3011,9 +3218,12 @@ class SynBad(rje_obj.RJE_Object):
             idlist2 = string.split(open(regfile,'r').read())
             pairs = rje.listIntersect(idlist1,idlist2)
             pentry = {'region1':regions[0],'region2':regions[1],'id1':len(idlist1),'id2':len(idlist2),'pairs':len(pairs),'type':ptype,'wtscore':0.0,'score':0.0}
+            if not score: return pentry
+            #X#p = self.dict['HiCOffProb'][qh]
             if pentry['pairs']:
                 pentry['score'] = 2.0 * pentry['pairs'] / (pentry['id1']+pentry['id2'])
                 pentry['wtscore'] = (0.5 * pentry['pairs'] / pentry['id1']) + (0.5 * pentry['pairs'] / pentry['id2'])
+                #?# pentry['pscore'] = -> Can we use rje.poisson(observed,expected,exact=False,callobj=None,uselog=True) ? How?
             elif min(pentry['id1'],pentry['id2']) < 1:
                 pentry['score'] = 'NA'
                 pentry['wtscore'] = 'NA'
@@ -3023,6 +3233,148 @@ class SynBad(rje_obj.RJE_Object):
         except:
             self.errorLog('%s.hicPair error' % self.prog())
             return None
+#########################################################################################################################
+    def doubleFlanks(self,qh):  ### Returns a list of flank regions that are both ends of a contig (have two "best" pairs)
+        '''
+        Returns a list of flank regions that are both ends of a contig (have two "best" pairs).
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            qh = qh.lower()
+            if not 'DoubleFlanks' in self.dict: self.dict['DoubleFlanks'] = {'qry':[],'hit':[]}
+            if self.dict['DoubleFlanks'][qh]: return self.dict['DoubleFlanks'][qh]
+            cdb = self.dbTable(qh,'contigs')
+
+            ### ~ [1] Process ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            #!# Rename flanks as "Ends" for contigs = only flanks for Gaps
+            #!# "Pairs" are ends that match another end over a gap (i.e. flank the same gap)
+            for entry in cdb.entries():
+                if entry['flank5'] == entry['flank3']: self.dict['DoubleFlanks'][qh].append(entry['flank5'])
+            return self.dict['DoubleFlanks'][qh]
+        except:
+            self.errorLog('%s.doubleFlanks error' % self.prog())
+            raise
+#########################################################################################################################
+    def bestHiCPairTable(self,qh):  ### Reduces the HiC pairs table to the best pairs.
+        '''
+        Reduces the HiC pairs table to the best pairs.
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            #!# At some point will want to add up/downstream checks for consistency
+            hictable = '{0}.hicbest'.format(qh.lower())
+            if not self.dbTable(qh,'hicpairs',expect=False): return None
+            hdb = self.db().copyTable(self.dbTable(qh,'hicpairs'),hictable,replace=True,add=True)
+            score = self.getStrLC('HiCScore')
+            doubles = self.doubleFlanks(qh)
+            #self.debug('{0}: {1}'.format(qh,' '.join(doubles)))
+
+            ### ~ [1] Rate pairs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            hdb.addField('best',evalue='null')
+            allpair = {}   # Dictionary of flank:[(score,id,pair)] -> Sort then assess
+            ## ~ [1a] Build pair lists ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            for entry in hdb.entries():
+                for flank in ['region1','region2']:
+                    pair = {'region1':'region2','region2':'region1'}[flank]
+                    if entry[flank] not in allpair: allpair[entry[flank]] = []
+                    allpair[entry[flank]].append((entry[score],entry['pairs'],entry[pair]))
+                    #self.bugPrint('{0}: {1}'.format(entry[flank],allpair[entry[flank]]))
+            #self.debug('1a||')
+            ## ~ [1b] Reduce to best pairs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            bestpair = {}   # Dictionary of flank:[bestpairs]
+            weakpair = {}   # Dictionary of flank:[bestpairs that fail to meet HiCMin]
+            for flank in allpair:
+                allpair[flank].sort(reverse=True)
+                bestpair[flank] = []
+                weakpair[flank] = []
+                #i# Strong first
+                for pair in allpair[flank]:
+                    if pair[1] >= self.getInt('HiCMin'): bestpair[flank].append(pair[2])
+                    else: weakpair[flank].append(pair[2])
+                bestn = {True:2,False:1}[flank in doubles]
+                bestpair[flank] = bestpair[flank][:bestn]
+                weakpair[flank] = weakpair[flank][:(bestn-len(bestpair[flank]))]
+                #self.bugPrint('{0}: {1} / {2}'.format(flank,bestpair[flank],weakpair[flank]))
+            #self.debug('1b||')
+            ## ~ [1c] Update table with best pairs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ##
+            for entry in hdb.entries():
+                if entry['type'] not in ['Check','Rand']: entry['best'] = 'none'
+                for flank in ['region1','region2']:
+                    pair = {'region1':'region2','region2':'region1'}[flank]
+                    if entry[pair] in bestpair[entry[flank]] and entry[flank] in bestpair[entry[pair]]: entry['best'] = 'both'
+                    elif entry[pair] in weakpair[entry[flank]] and entry[flank] in bestpair[entry[pair]]: entry['best'] = 'both'
+                    elif entry[pair] in bestpair[entry[flank]] and entry[flank] in weakpair[entry[pair]]: entry['best'] = 'both'
+                    elif entry[pair] in bestpair[entry[flank]]: entry['best'] = flank
+                    elif entry[flank] in bestpair[entry[pair]]: entry['best'] = pair
+                    elif entry[pair] in weakpair[entry[flank]] and entry[flank] in weakpair[entry[pair]]: entry['best'] = 'weak'
+                    elif entry[pair] in weakpair[entry[flank]]: entry['best'] = 'weak' + flank[-1]
+                    elif entry[flank] in weakpair[entry[pair]]: entry['best'] = 'weak' + pair[-1]
+                #self.bugPrint('{0}'.format(hdb.entrySummary(entry,collapse=True)))
+            #self.debug('1c||')
+
+            ### ~ [2] Save table ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            hdb.dropEntriesDirect('best',['null'])
+            hdb.saveToFile()
+            return hdb
+
+        except:
+            self.errorLog('%s.bestHiCPairTable error' % self.prog())
+            return None
+#########################################################################################################################
+    def OLDbestHiCPairTable(self,qh):  ### Reduces the HiC pairs table to the best pairs.
+        '''
+        Reduces the HiC pairs table to the best pairs.
+        '''
+        try:### ~ [0] Setup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            hictable = '{0}.hicbest'.format(qh.lower())
+            hdb = self.db().copyTable(self.dbTable(qh,'hicpairs'),hictable,replace=True,add=True)
+            score = self.getStrLC('HiCScore')
+
+            ### ~ [1] Rate pairs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+            hdb.addField('best',evalue='null')
+            bestscore = {}  # Dictionary of flank:best score
+            bestpair = {}   # Dictionary of flank:[best pairs]
+            for entry in hdb.entries():
+                for flank in ['region1','region2']:
+                    pair = {'region1':'region2','region2':'region1'}[flank]
+                    if entry[flank] not in bestscore: bestscore[entry[flank]] = 0.0
+                    if entry[flank] not in bestpair: bestpair[entry[flank]] = []
+                    if entry[score] > bestscore[entry[flank]]:
+                        bestscore[entry[flank]] = entry[score]
+                        bestpair[entry[flank]] = [entry[pair]]
+                    elif entry[score] == bestscore[entry[flank]]:
+                        bestpair[entry[flank]].append(entry[pair])
+
+            for entry in hdb.entries():
+                if entry['type'] not in ['Check','Rand']: entry['best'] = 'none'
+                for flank in ['region1','region2']:
+                    pair = {'region1':'region2','region2':'region1'}[flank]
+                    if entry[pair] in bestpair[entry[flank]] and entry[flank] in bestpair[entry[pair]]: entry['best'] = 'both'
+                    elif entry[pair] in bestpair[entry[flank]]: entry['best'] = flank
+                    elif entry[flank] in bestpair[entry[pair]]: entry['best'] = pair
+
+            hdb.dropEntriesDirect('best',['null'])
+            hdb.saveToFile()
+            return None
+
+        except:
+            self.errorLog('%s.bestHiCPairTable error' % self.prog())
+            return None
+#########################################################################################################################
+    def bestHiCPairDict(self,qh):   ### Returns dictionary of {flank:bestpair}
+        '''
+        Returns dictionary of {flank:bestpair}.
+        '''
+        besthic = {}
+        hicdb = self.dbTable(qh,'hicbest')
+        for entry in hicdb.indexEntries('best','both'):
+            besthic[entry['region1']] = entry['region2']
+            besthic[entry['region2']] = entry['region1']
+        for entry in hicdb.indexEntries('best','region1'):
+            if entry['region1'] not in besthic:
+                besthic[entry['region1']] = entry['region2']
+        for entry in hicdb.indexEntries('best','region2'):
+            if entry['region2'] not in besthic:
+                besthic[entry['region2']] = entry['region1']
+        return besthic
 #########################################################################################################################
     def mapFlanksToGenome(self,qh):   ### Runs GABLAM of flanks against assembly to map old flanks onto new assembly.
         '''
@@ -3221,7 +3573,7 @@ class SynBad(rje_obj.RJE_Object):
             if not self.fastaFromAssemblyMap(contigs,mapout,fasout): return False
             return True
         except:
-            self.errorLog('%s.saveAssemblyMaps error' % self.prog()); raise
+            self.errorLog('%s.saveAssemblyMaps error' % self.prog()); return False
 #########################################################################################################################
     def outputAssemblyMap(self,maplist,mapout,newacc=None):   ### Generate assembly text file using assembly map.
         '''
@@ -3410,7 +3762,11 @@ class SynBad(rje_obj.RJE_Object):
         flank1 = entry['flank1']
         flank2 = entry['flank2']
         amap = self.list[qh]
-        mapi = [amap.index(flank1), amap.index(flank2)]
+        try:
+            mapi = [amap.index(flank1), amap.index(flank2)]
+        except:
+            self.errorLog('Problem mapping flank during conflict check')
+            return True
         mapi.sort()
         editchunk = amap[mapi[0]:mapi[1]+1]
         if len(editchunk) == 5: return False
@@ -3486,7 +3842,7 @@ class SynBad(rje_obj.RJE_Object):
                 self.printLog('\r#INV','Processed {0} inversions: {1} edits'.format(qh,editx))
 
             ### ~ [3] Output updated map and fasta ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-                self.saveAssemblyMaps(qh,mapname='synbad')
+                if not self.saveAssemblyMaps(qh,mapname='synbad'): return False
                 cdb.saveToFile(backup=False)
 
             return True
@@ -3503,6 +3859,10 @@ class SynBad(rje_obj.RJE_Object):
             checklen = len(amap)
             ### ~ [1] Invert ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
             mapi = [amap.index(flank1), amap.index(flank2)]
+            if flank1 == flank2:
+                mapi[1] = mapi[1] + 4
+                if amap[mapi[1]] != flank2:
+                    raise ValueError('Problem finding both ends of contig with identical flanks')
             mapi.sort()
             #!# Add check for correct orientation prior to inversion #!#
             #!# Add check for coherent map element

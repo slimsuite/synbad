@@ -1,7 +1,7 @@
 # SynBad: Synteny-based scaffolding assessment and adjustment
 
 ```
-SynBad v0.8.1
+SynBad v0.8.3
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.
@@ -118,8 +118,9 @@ spannedflank=INT: Required flanking distance for synreadspan "Spanned" rating [0
 maxoverlap=INT  : Maximum overlap (bp) of adjacent local hits to allow compression [500]
 chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
 chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
-### ~ Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic [False]
+### ~ Correction and Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+correct=T/F     : Whether to try to fix errors in the assembly [True]
+fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic if no corrections made [False]
 fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Brk,Inv,InvBrk,Frag,Tran]
 minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
 ### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###

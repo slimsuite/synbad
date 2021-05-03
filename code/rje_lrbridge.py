@@ -5,7 +5,7 @@
 # To incorporate this module into your own programs, please see GNU Lesser General Public License disclaimer in rje.py
 
 """
-Module:       lrbridge
+Module:       rje_lrbridge
 Description:  Long read bridging methods library
 Version:      0.0
 Last Edit:    19/04/21

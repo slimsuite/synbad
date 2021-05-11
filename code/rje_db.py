@@ -826,8 +826,9 @@ class Table(rje.RJE_Object):
     def entrySummary(self,entry,fields=[],invert=False,collapse=False):   ### Returns a string summary of an entry - useful for debugging etc.
         '''Returns a string summary of an entry - useful for debugging etc.'''
         if not fields: fields = self.fields()
-        estr = 'Entry "%s"\n' % str(self.makeKey(entry))
+        estr = 'Entry "%s"' % str(self.makeKey(entry))
         if collapse: estr += '|--'
+        else: estr += '\n'
         for field in self.fields():
             if field in fields != invert:
                 if collapse: estr += ' %s:"%s";' % (field,entry[field])

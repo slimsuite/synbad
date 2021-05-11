@@ -1,7 +1,7 @@
 # SynBad: Synteny-based scaffolding assessment and adjustment
 
 ```
-SynBad v0.8.3
+SynBad v0.8.4
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.
@@ -119,19 +119,27 @@ maxoverlap=INT  : Maximum overlap (bp) of adjacent local hits to allow compressi
 chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
 chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
 ### ~ Correction and Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-correct=T/F     : Whether to try to fix errors in the assembly [True]
+correct=LIST    : List of edit types to try to fix in the assembly (invert/extract/relocate; T/True=all) [True]
 fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic if no corrections made [False]
 fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Brk,Inv,InvBrk,Frag,Tran]
 minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
+minctglen=INT   : Extract any contigs below a minimum length threshold [500]
+minbadctg=INT   : Extract any contigs with bad flanking ratings below a minimum length threshold [5000]
+minscafflen=INT : Remove any scaffolds (inc. detached/extracted contigs) below minimum length threshold [500]
+gapsize=INT     : Size of gaps to add when relocating assembling chunks [500]
 ### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 bam1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
 paf1=FILE       : Optional PAF file of long reads mapped onto assembly 1 [$BASEFILE1.paf]
 reads1=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
 readtype1=LIST  : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
+busco1=FILE     : Optional BUSCO full results file for genome 1 []
+scdep1=NUM      : Optional single copy read depth for genome 1 []
 bam2=FILE       : Optional BAM file of long reads mapped onto assembly 2 [$BASEFILE2.bam]
 paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
 reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
 readtype2=LIST  : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
+busco2=FILE     : Optional BUSCO full results file for genome 2 []
+scdep2=NUM      : Optional single copy read depth for genome 2 []
 mapflanks1=FILE : Flanks fasta file from previous SynBad run for mapping genome 1 flank identifiers []
 mapflanks2=FILE : Flanks fasta file from previous SynBad run for mapping genome 2 flank identifiers []
 fullmap=T/F     : Whether to abort if not all flanks can be mapped [True]

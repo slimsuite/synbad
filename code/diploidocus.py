@@ -19,8 +19,8 @@
 """
 Module:       Diploidocus
 Description:  Diploid genome assembly analysis toolkit
-Version:      0.17.0
-Last Edit:    07/04/21
+Version:      0.17.1
+Last Edit:    04/05/21
 Citation:     Edwards RJ et al. (2021), BMC Genomics [PMID: 33726677]
 GitHub:       https://github.com/slimsuite/diploidocus
 Copyright (C) 2020  Richard J. Edwards - See source code for GNU License Notice
@@ -509,6 +509,7 @@ def history():  ### Program History - only a method for PythonWin collapsing! ##
     # 0.16.3 - Updated some of the documentation.
     # 0.16.4 - Fixed a bug where pretrim of vecscreen results will cause BUSCO genes to be missed during classification.
     # 0.17.0 - Added purgecyc=INT : Minimum number of purged sequences to trigger next round of dipcycle [2]
+    # 0.17.1 - Minor tweaks to log output.
     '''
 #########################################################################################################################
 def todo():     ### Major Functionality to Add - only a method for PythonWin collapsing! ###
@@ -781,10 +782,10 @@ class Diploidocus(rje_obj.RJE_Object):
                 #self._cmdReadList(cmd,'cdictlist',['Att']) # As cdict but also enters keys into list
             except: self.errorLog('Problem with cmd:%s' % cmd)
         if self.getStrLC('GenomeSize'):
-         try: self.setInt({'GenomeSize':rje_seqlist.bpFromStr(self.getStrLC('GenomeSize'))})
-         except:
-            self.errorLog('Problem with GenomeSize. Setting genomesize=0')
-            self.setInt({'GenomeSize':0})
+            try: self.setInt({'GenomeSize':rje_seqlist.bpFromStr(self.getStrLC('GenomeSize'))})
+            except:
+                self.errorLog('Problem with GenomeSize. Setting genomesize=0')
+                self.setInt({'GenomeSize':0})
 #########################################################################################################################
     ### <2> ### Main Class Backbone                                                                                     #
 #########################################################################################################################
@@ -2005,6 +2006,10 @@ class Diploidocus(rje_obj.RJE_Object):
                 if self.getStrLC('SeqIn'): self.baseFile(rje.baseFile(self.getStr('SeqIn'),strip_path=True))
                 else: self.baseFile('diploidocus')
             self.printLog('#BASE','Output file basename: %s' % self.baseFile())
+            if self.getNum('SCDepth'):
+                self.printLog('#SCDEP','Single copy read depth (scdepth=NUM) = {0:.2f}X'.format(self.getNum('SCDepth')))
+            if self.getInt('GenomeSize'):
+                self.printLog('#GSIZE','Genome size (genomesize=INT) = {0}'.format(rje_seqlist.dnaLen(self.getInt('GenomeSize'))))
             return True     # Setup successful
         except: self.errorLog('Problem during %s setup.' % self.prog()); return False  # Setup failed
 #########################################################################################################################
@@ -3122,6 +3127,7 @@ class Diploidocus(rje_obj.RJE_Object):
             if self.getNum('SCDepth'):
                 self.printLog('#SCDEP','Using loaded single copy read depth = {0:.2f}X'.format(scdepth))
             else:
+                self.printLog('#SCDEP','No single copy read depth (scdepth=NUM): will calculate from BAM and BUSCO')
                 scdepth = self.genomeSize(scdepth=True)
                 self.printLog('#SCDEP','Using BUSCO-derived single copy read depth = {0}X'.format(scdepth))
                 if not scdepth: raise ValueError('Failed to establish SC read depth')

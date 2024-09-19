@@ -1,10 +1,10 @@
-python ../code/synbad.py basefile=synbad dochtml newlog
+python3 ../code/synbad.py basefile=synbad dochtml newlog
 
-echo '#' $(python ../code/synbad.py --description) > ../SynBad.md
+echo '#' $(python3 ../code/synbad.py --description) > ../SynBad.md
 echo >> ../SynBad.md
 
 echo '```' >> ../SynBad.md
-python ../code/synbad.py --details >> ../SynBad.md
+python3 ../code/synbad.py --details >> ../SynBad.md
 echo '```' >> ../SynBad.md
 echo >> ../SynBad.md
 echo 'For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.' >> ../SynBad.md

@@ -1,7 +1,7 @@
 # SynBad: Synteny-based scaffolding assessment and adjustment
 
 ```
-SynBad v0.8.4
+SynBad v0.12.2
 ```
 
 For a better rendering and navigation of this document, please download and open [`./docs/synbad.docs.html`](./docs/synbad.docs.html), or visit <https://slimsuite.github.io/synbad/>.
@@ -92,8 +92,9 @@ prior to running SynBad.
 
 ## Dependencies
 
-SynBad needs Minimap2 installed. For `gapass` gap mode, Flye also needs to be installed. To generate
-documentation with `dochtml`, R will need to be installed and a pandoc environment variable must be set, e.g.
+SynBad needs Minimap2 installed. For `gapass` gap mode, Flye also needs to be installed. For KAT kmer assessments
+of flanks, KAT must be installed (or pre-run on the genomes).
+To generate documentation with `dochtml`, R will need to be installed and a pandoc environment variable must be set, e.g.
 
     export RSTUDIO_PANDOC=/Applications/RStudio.app/Contents/MacOS/pandoc
 
@@ -114,12 +115,13 @@ minlocid=PERC   : Minimum percentage identity for aligned chunk to be kept (loca
 maxsynskip=INT  : Maximum number of local alignments to skip for SynTrans classification [4]
 maxsynspan=INT  : Maximum distance (bp) between syntenic local alignments to count as syntenic [25000]
 synreadspan=INT : Minimum number of reads spanning a gap to change the rating to "Spanned" [5]
+checkflanks=LIST: List of lengths flanking gaps that must also be spanned by reads [0,100,1000]
 spannedflank=INT: Required flanking distance for synreadspan "Spanned" rating [0]
 maxoverlap=INT  : Maximum overlap (bp) of adjacent local hits to allow compression [500]
 chr1=X          : PAFScaff-style chromosome prefix for Genome 1 to distinguish Translocation from Fragmentation []
 chr2=X          : PAFScaff-style chromosome prefix for Genome 2 to distinguish Translocation from Fragmentation []
 ### ~ Correction and Fragmentation options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
-correct=LIST    : List of edit types to try to fix in the assembly (invert/extract/relocate; T/True=all) [True]
+correct=LIST    : List of edit types to try to fix in the assembly (invert/extract/relocate/break/join; T/True=all) [True]
 fragment=T/F    : Whether to fragment the assembly at gaps marked as non-syntenic if no corrections made [False]
 fragtypes=LIST  : List of SynBad ratings to trigger fragmentation [Brk,Inv,InvBrk,Frag,Tran]
 minreadspan=INT : Min number of Span0 reads in gaps table to prevent fragmentation [1]
@@ -127,13 +129,16 @@ minctglen=INT   : Extract any contigs below a minimum length threshold [500]
 minbadctg=INT   : Extract any contigs with bad flanking ratings below a minimum length threshold [5000]
 minscafflen=INT : Remove any scaffolds (inc. detached/extracted contigs) below minimum length threshold [500]
 gapsize=INT     : Size of gaps to add when relocating assembling chunks [500]
+rejoin=T/F      : Whether to rejoin original gaps that end up split into termini but not too short [True]
 ### ~ Additional input options ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
+masked1=FASFILE : Optional masked fasta file for assembly comparison [$BASEFILE1.masked.fasta]
 bam1=FILE       : Optional BAM file of long reads mapped onto assembly 1 [$BASEFILE1.bam]
 paf1=FILE       : Optional PAF file of long reads mapped onto assembly 1 [$BASEFILE1.paf]
 reads1=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
 readtype1=LIST  : List of ont/pb/hifi file types matching reads for minimap2 mapping [ont]
 busco1=FILE     : Optional BUSCO full results file for genome 1 []
 scdep1=NUM      : Optional single copy read depth for genome 1 []
+masked2=FASFILE : Optional masked fasta file for assembly comparison [$BASEFILE2.masked.fasta]
 bam2=FILE       : Optional BAM file of long reads mapped onto assembly 2 [$BASEFILE2.bam]
 paf2=FILE       : Optional PAF file of long reads mapped onto assembly 2 [$BASEFILE2.paf]
 reads2=FILELIST : List of fasta/fastq files containing reads. Wildcard allowed. Can be gzipped. []
